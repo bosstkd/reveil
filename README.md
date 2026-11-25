@@ -101,3 +101,30 @@ d'accès a expiré.
 
 Protégé → `200 { "id": "...", "email": "..." }` ; `401` sans jeton valide ou session révoquée.
 
+
+## Événements
+
+Collection `events` : `title`, `startsAt` (instant **UTC**, BSON Date), `timeZone` (fuseau IANA de l'utilisateur
+à la saisie), `location` (facultatif, `null` si vide), `ownerId`, `createdAt`. Index `ix_events_owner_starts_at`.
+
+### `POST /api/events` (protégé)
+
+```json
+{ "title": "Concert", "date": "2026-12-24", "time": "20:30", "timeZone": "Europe/Paris", "location": "Olympia" }
+```
+
+La date/heure est **locale** à l'utilisateur ; le serveur la convertit en UTC selon `timeZone`
+(heure inexistante au passage à l'heure d'été : décalée vers l'avant).
+
+- `201` → `{ "id", "title", "startsAt": "2026-12-24T19:30:00Z", "localDateTime": "2026-12-24T20:30:00",
+  "timeZone", "location", "past": false, "warnings": [] }`
+- Date passée : **acceptée** (`201`), `"past": true`, `"warnings": ["La date de cet événement est déjà passée"]`.
+- `400` → titre vide/absent, date ou heure absente, fuseau absent ou inconnu (`errors[].field`), JSON/date illisible.
+
+### `GET /api/events` (protégé)
+
+Événements de l'utilisateur connecté, triés par date croissante (même format que ci-dessus).
+
+Clients : formulaire de création sur l'écran « Mes événements » (web : `<input type="date|time">` ; mobile :
+sélecteur natif `@react-native-community/datetimepicker`). Le fuseau est celui du navigateur/appareil
+(`Intl`). Une date passée affiche un avertissement sans bloquer ; l'événement créé est ajouté à la liste sans rechargement.

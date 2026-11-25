@@ -1,0 +1,12 @@
+.event-form { display: flex; flex-direction: column; gap: .4rem; margin: 1rem 0; padding: 1.2rem; border-radius: 10px; box-shadow: 0 2px 12px #0002; }
+h2 { margin: 0 0 .5rem; font-size: 1.2rem; }
+input { padding: .6rem; border: 1px solid #bbb; border-radius: 6px; font-size: 1rem; }
+.row { display: flex; gap: 1rem; }
+.row > div { flex: 1; display: flex; flex-direction: column; gap: .4rem; }
+.hint { margin: 0; font-size: .8rem; color: #666; }
+.warning { margin: 0; padding: .5rem; border-radius: 6px; background: #fff3bf; color: #8a6100; font-size: .9rem; }
+.field-error, .server-error { margin: 0; color: #c92a2a; font-size: .85rem; }
+.actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .8rem; }
+button { padding: .6rem 1rem; border: 0; border-radius: 6px; background: #3b5bdb; color: #fff; font-size: 1rem; cursor: pointer; }
+button.secondary { background: #fff; color: #3b5bdb; border: 1px solid #3b5bdb; }
+button:disabled { opacity: .6; }

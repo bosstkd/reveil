@@ -144,7 +144,8 @@ describe('Déconnexion (mobile)', () => {
 
     expect(await screen.findByTestId('login-submit')).toBeOnTheScreen();
     expect(store.has('reveil.session')).toBe(false);
-    const [url, init] = fetchMock.mock.calls[1];
+    // L'écran des événements charge aussi la liste (GET /api/events) : on cible l'appel de déconnexion.
+    const [url, init] = fetchMock.mock.calls.find(([u]) => /\/api\/auth\/logout$/.test(u))!;
     expect(url).toMatch(/\/api\/auth\/logout$/);
     expect(JSON.parse(init.body)).toEqual({ refreshToken: 's.r1' });
     expect(init.headers.Authorization).toBe('Bearer jwt');
