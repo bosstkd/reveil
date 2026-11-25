@@ -2,6 +2,7 @@ package com.reveil.config;
 
 import com.reveil.auth.EmailAlreadyUsedException;
 import com.reveil.auth.InvalidCredentialsException;
+import com.reveil.event.InvalidListQueryException;
 import com.reveil.session.InvalidRefreshTokenException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,6 +13,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /** Format d'erreur commun : { "message": ..., "errors": [{ "field", "message" }] }. */
 @RestControllerAdvice
@@ -34,6 +36,18 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidRefreshTokenException.class)
     public ResponseEntity<Map<String, Object>> invalidRefreshToken(InvalidRefreshTokenException e) {
         return body(HttpStatus.UNAUTHORIZED, e.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(InvalidListQueryException.class)
+    public ResponseEntity<Map<String, Object>> invalidListQuery(InvalidListQueryException e) {
+        return body(HttpStatus.BAD_REQUEST, "Paramètres invalides", List.of(new FieldError(e.getField(), e.getMessage())));
+    }
+
+    /** Paramètre de requête non convertible (ex. {@code page=abc}). */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> typeMismatch(MethodArgumentTypeMismatchException e) {
+        return body(HttpStatus.BAD_REQUEST, "Paramètres invalides",
+                List.of(new FieldError(e.getName(), "Valeur invalide")));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

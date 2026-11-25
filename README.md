@@ -121,9 +121,21 @@ La date/heure est **locale** à l'utilisateur ; le serveur la convertit en UTC s
 - Date passée : **acceptée** (`201`), `"past": true`, `"warnings": ["La date de cet événement est déjà passée"]`.
 - `400` → titre vide/absent, date ou heure absente, fuseau absent ou inconnu (`errors[].field`), JSON/date illisible.
 
-### `GET /api/events` (protégé)
+### `GET /api/events?when=upcoming|past&page=0&size=20` (protégé)
 
-Événements de l'utilisateur connecté, triés par date croissante (même format que ci-dessus).
+Liste paginée des événements **de l'utilisateur connecté** (index `ix_events_owner_starts_at` sur `(ownerId, startsAt)`,
+utilisé pour le filtre et le tri, sans tri en mémoire).
+
+- `when` : `upcoming` (défaut, `startsAt ≥ maintenant`, date **croissante**) ou `past` (`startsAt < maintenant`,
+  du plus récent au plus ancien). « Maintenant » = horloge du serveur.
+- `page` ≥ 0 (défaut 0), `size` entre 1 et 100 (défaut 20).
+- `200` → `{ "when": "upcoming", "items": [ <événement> ], "page": 0, "size": 20, "totalElements": 42, "hasNext": true }`
+- `400` → `{ "message": "Paramètres invalides", "errors": [{ "field": "size", "message": "..." }] }`
+
+Écran « Mes événements » (web et mobile) : onglets **À venir** / **Passés** (chargé à la première ouverture), pages
+de 100 avec « Afficher plus » (mobile : `FlatList` virtualisée, chargement en fin de liste). Chaque élément affiche
+titre, date, heure (dans le fuseau de saisie) et temps restant (« dans 2 jours », « il y a 3 heures » ; arrondi à
+l'unité inférieure, rafraîchi chaque minute). Liste à venir vide : bouton « Créer mon premier événement ».
 
 Clients : formulaire de création sur l'écran « Mes événements » (web : `<input type="date|time">` ; mobile :
 sélecteur natif `@react-native-community/datetimepicker`). Le fuseau est celui du navigateur/appareil

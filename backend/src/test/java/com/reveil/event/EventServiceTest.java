@@ -2,6 +2,7 @@ package com.reveil.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -12,9 +13,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 class EventServiceTest {
 
@@ -81,5 +87,42 @@ class EventServiceTest {
         assertThat(saved()).isNotNull();
         assertThat(res.past()).isTrue();
         assertThat(res.warnings()).containsExactly(EventResponse.PAST_WARNING);
+    }
+
+    @Test
+    void upcomingListsFromNowByAscendingDate() {
+        Event soon = new Event("Bientôt", NOW.plusSeconds(3600), "UTC", null, "u1");
+        when(repository.findByOwnerIdAndStartsAtGreaterThanEqual(eq("u1"), eq(NOW), any()))
+                .thenReturn(new PageImpl<>(List.of(soon), PageRequest.of(0, 1), 3));
+
+        EventPage page = service.list("u1", EventPeriod.UPCOMING, 0, 1);
+
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findByOwnerIdAndStartsAtGreaterThanEqual(eq("u1"), eq(NOW), pageable.capture());
+        assertThat(pageable.getValue().getPageNumber()).isZero();
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(1);
+        assertThat(pageable.getValue().getSort()).isEqualTo(Sort.by(Sort.Direction.ASC, "startsAt"));
+        assertThat(page.when()).isEqualTo("upcoming");
+        assertThat(page.items()).extracting(EventResponse::title).containsExactly("Bientôt");
+        assertThat(page.items().get(0).past()).isFalse();
+        assertThat(page.totalElements()).isEqualTo(3);
+        assertThat(page.hasNext()).isTrue();
+    }
+
+    @Test
+    void pastListsBeforeNowMostRecentFirst() {
+        Event yesterday = new Event("Hier", NOW.minusSeconds(86_400), "UTC", null, "u1");
+        when(repository.findByOwnerIdAndStartsAtLessThan(eq("u1"), eq(NOW), any()))
+                .thenReturn(new PageImpl<>(List.of(yesterday), PageRequest.of(1, 10), 11));
+
+        EventPage page = service.list("u1", EventPeriod.PAST, 1, 10);
+
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findByOwnerIdAndStartsAtLessThan(eq("u1"), eq(NOW), pageable.capture());
+        assertThat(pageable.getValue().getPageNumber()).isEqualTo(1);
+        assertThat(pageable.getValue().getSort()).isEqualTo(Sort.by(Sort.Direction.DESC, "startsAt"));
+        assertThat(page.when()).isEqualTo("past");
+        assertThat(page.items().get(0).past()).isTrue();
+        assertThat(page.hasNext()).isFalse();
     }
 }

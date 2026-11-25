@@ -5,7 +5,11 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -37,9 +41,19 @@ public class EventService {
         return EventResponse.of(saved, clock.instant());
     }
 
-    /** Événements de l'utilisateur, du plus proche au plus lointain. */
-    public List<EventResponse> list(String ownerId) {
+    /**
+     * Page des événements de {@code ownerId} : à venir triés du plus proche au plus lointain,
+     * passés du plus récent au plus ancien. « Maintenant » est l'horloge du serveur (UTC).
+     */
+    public EventPage list(String ownerId, EventPeriod period, int page, int size) {
         Instant now = clock.instant();
-        return events.findByOwnerIdOrderByStartsAtAsc(ownerId).stream().map(e -> EventResponse.of(e, now)).toList();
+        Page<Event> result = period == EventPeriod.UPCOMING
+                ? events.findByOwnerIdAndStartsAtGreaterThanEqual(ownerId, now,
+                        PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "startsAt")))
+                : events.findByOwnerIdAndStartsAtLessThan(ownerId, now,
+                        PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "startsAt")));
+        List<EventResponse> items = result.getContent().stream().map(e -> EventResponse.of(e, now)).toList();
+        return new EventPage(period.name().toLowerCase(Locale.ROOT), items, page, size, result.getTotalElements(),
+                result.hasNext());
     }
 }

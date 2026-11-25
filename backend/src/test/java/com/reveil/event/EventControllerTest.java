@@ -1,6 +1,7 @@
 package com.reveil.event;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -118,11 +119,44 @@ class EventControllerTest {
     }
 
     @Test
-    void listReturnsTheCurrentUserEvents() throws Exception {
-        when(eventService.list("u1")).thenReturn(List.of(response(false)));
+    void listRequiresAuthentication() throws Exception {
+        mvc.perform(get("/api/events")).andExpect(status().isUnauthorized());
+        verify(eventService, never()).list(any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void listDefaultsToUpcomingFirstPageOfTheCurrentUser() throws Exception {
+        when(eventService.list("u1", EventPeriod.UPCOMING, 0, EventController.DEFAULT_PAGE_SIZE))
+                .thenReturn(new EventPage("upcoming", List.of(response(false)), 0, 20, 1, false));
 
         mvc.perform(get("/api/events").header("Authorization", "Bearer good"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].title").value("Concert"));
+                .andExpect(jsonPath("$.when").value("upcoming"))
+                .andExpect(jsonPath("$.items[0].title").value("Concert"))
+                .andExpect(jsonPath("$.items[0].startsAt").value("2026-12-24T19:30:00Z"))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.hasNext").value(false));
+    }
+
+    @Test
+    void listPassesFilterAndPagination() throws Exception {
+        when(eventService.list("u1", EventPeriod.PAST, 2, 100))
+                .thenReturn(new EventPage("past", List.of(response(true)), 2, 100, 201, false));
+
+        mvc.perform(get("/api/events").param("when", "PAST").param("page", "2").param("size", "100")
+                        .header("Authorization", "Bearer good"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.when").value("past"))
+                .andExpect(jsonPath("$.page").value(2))
+                .andExpect(jsonPath("$.items[0].past").value(true));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"when,later", "page,-1", "size,0", "size,101", "page,abc"})
+    void invalidListParameterReturns400(String name, String value) throws Exception {
+        mvc.perform(get("/api/events").param(name, value).header("Authorization", "Bearer good"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value(name));
+        verify(eventService, never()).list(any(), any(), anyInt(), anyInt());
     }
 }

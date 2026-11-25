@@ -1,4 +1,5 @@
-import type { CreateEventPayload, ReveilEvent } from './events';
+import { PAGE_SIZE } from './events';
+import type { CreateEventPayload, EventPage, EventPeriod, ReveilEvent } from './events';
 
 type AuthFetch = (path: string, init?: RequestInit) => Promise<Response>;
 
@@ -11,15 +12,16 @@ export class EventError extends Error {
 
 const UNREACHABLE = 'Serveur injoignable. Vérifiez votre connexion.';
 
-export async function listEvents(authFetch: AuthFetch): Promise<ReveilEvent[]> {
+/** GET /api/events?when=…&page=…&size=… : une page des événements de l'utilisateur connecté. */
+export async function listEvents(authFetch: AuthFetch, when: EventPeriod, page = 0): Promise<EventPage> {
   let res: Response;
   try {
-    res = await authFetch('/api/events');
+    res = await authFetch(`/api/events?when=${when}&page=${page}&size=${PAGE_SIZE}`);
   } catch {
     throw new EventError(UNREACHABLE, 0);
   }
   const body = await res.json().catch(() => null);
-  if (res.ok && Array.isArray(body)) return body as ReveilEvent[];
+  if (res.ok && Array.isArray(body?.items)) return body as EventPage;
   throw new EventError('Impossible de charger vos événements.', res.status);
 }
 
