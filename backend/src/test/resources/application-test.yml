@@ -1,0 +1,7 @@
+de:
+  flapdoodle:
+    mongodb:
+      embedded:
+        # 4.4 : même version que docker-compose.devpilot.yml (dernière série sans exigence CPU AVX).
+        # Surcharger via EMBEDDED_MONGO_VERSION (ex. 7.0.14) si besoin.
+        version: ${EMBEDDED_MONGO_VERSION:4.4.29}

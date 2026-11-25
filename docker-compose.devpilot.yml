@@ -1,0 +1,47 @@
+# Environnement de test DevPilot : MongoDB + API Java + interface web (nginx, port 8080).
+# L'application est servie sous /test/reveil/ ; le préfixe est retiré avant d'arriver à "web".
+services:
+  mongo:
+    # 4.4 : dernière série MongoDB ne nécessitant pas de CPU AVX.
+    image: mongo:4.4
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongo", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    environment:
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/reveil
+      # Secret de signature des jetons : à fournir par l'environnement (>= 32 octets).
+      # Vide => clé éphémère générée au démarrage (sessions perdues au redémarrage).
+      REVEIL_JWT_SECRET: ${REVEIL_JWT_SECRET:-}
+    expose:
+      - "8081"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+      args:
+        BASE_HREF: /test/reveil/
+    expose:
+      - "8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  mongo-data:

@@ -1,0 +1,20 @@
+server:
+  port: ${PORT:8081}
+spring:
+  application:
+    name: reveil-backend
+  data:
+    mongodb:
+      # Par défaut localhost:27017 ; en déploiement : SPRING_DATA_MONGODB_URI
+      database: reveil
+      auto-index-creation: true
+reveil:
+  jwt:
+    # Fourni par l'environnement (REVEIL_JWT_SECRET, >= 32 octets). Vide => clé éphémère.
+    secret: ${REVEIL_JWT_SECRET:}
+    validity: P7D
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
