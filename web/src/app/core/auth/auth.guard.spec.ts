@@ -13,13 +13,18 @@ describe('authGuard', () => {
     return TestBed.runInInjectionContext(() => authGuard({} as never, {} as never));
   }
 
-  it("redirige vers /inscription sans session", () => {
+  it("redirige vers /connexion sans session", () => {
     const result = run() as UrlTree;
-    expect(TestBed.inject(Router).serializeUrl(result)).toBe('/inscription');
+    expect(TestBed.inject(Router).serializeUrl(result)).toBe('/connexion');
+  });
+
+  it('ignore une session stockée incomplète (sans jeton de rafraîchissement)', () => {
+    localStorage.setItem('reveil.session', JSON.stringify({ token: 't', user: { id: '1', email: 'a@b.co' } }));
+    expect(run()).not.toBe(true);
   });
 
   it('laisse passer avec une session', () => {
-    localStorage.setItem('reveil.session', JSON.stringify({ token: 't', user: { id: '1', email: 'a@b.co' } }));
+    localStorage.setItem('reveil.session', JSON.stringify({ token: 't', refreshToken: 's.r', user: { id: '1', email: 'a@b.co' } }));
     expect(run()).toBe(true);
   });
 });

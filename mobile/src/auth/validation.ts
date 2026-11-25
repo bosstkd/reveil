@@ -2,6 +2,8 @@
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PASSWORD_MIN_LENGTH = 8;
 export const EMAIL_ALREADY_USED_MESSAGE = 'Un compte existe déjà avec cet e-mail';
+/** Message générique de connexion refusée : ne précise jamais le champ en cause. */
+export const INVALID_CREDENTIALS_MESSAGE = 'E-mail ou mot de passe incorrect';
 
 export function validateEmail(email: string): string | null {
   const value = email.trim();

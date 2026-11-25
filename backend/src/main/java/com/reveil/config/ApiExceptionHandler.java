@@ -1,6 +1,8 @@
 package com.reveil.config;
 
 import com.reveil.auth.EmailAlreadyUsedException;
+import com.reveil.auth.InvalidCredentialsException;
+import com.reveil.session.InvalidRefreshTokenException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +23,17 @@ public class ApiExceptionHandler {
     @ExceptionHandler(EmailAlreadyUsedException.class)
     public ResponseEntity<Map<String, Object>> emailAlreadyUsed(EmailAlreadyUsedException e) {
         return body(HttpStatus.CONFLICT, e.getMessage(), List.of(new FieldError("email", e.getMessage())));
+    }
+
+    /** Message générique, sans champ en cause (ne révèle pas si l'e-mail existe). */
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<Map<String, Object>> invalidCredentials(InvalidCredentialsException e) {
+        return body(HttpStatus.UNAUTHORIZED, e.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<Map<String, Object>> invalidRefreshToken(InvalidRefreshTokenException e) {
+        return body(HttpStatus.UNAUTHORIZED, e.getMessage(), List.of());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

@@ -66,7 +66,7 @@ describe('Register', () => {
 
     const req = http.expectOne('api/auth/register');
     expect(req.request.body).toEqual({ email: 'alice@example.com', password: 'abcdefg1' });
-    req.flush({ token: 'jwt', user: { id: 'u1', email: 'alice@example.com' } }, { status: 201, statusText: 'Created' });
+    req.flush({ token: 'jwt', expiresIn: 900, refreshToken: 's.r', user: { id: 'u1', email: 'alice@example.com' } }, { status: 201, statusText: 'Created' });
 
     expect(navigate).toHaveBeenCalledWith('/evenements');
     expect(localStorage.getItem('reveil.session')).toContain('jwt');

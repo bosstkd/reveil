@@ -12,7 +12,13 @@ reveil:
   jwt:
     # Fourni par l'environnement (REVEIL_JWT_SECRET, >= 32 octets). Vide => clé éphémère.
     secret: ${REVEIL_JWT_SECRET:}
-    validity: P7D
+    # Durée de vie du jeton d'accès (court) ; renouvelé via /api/auth/refresh.
+    validity: PT15M
+  session:
+    # Durée d'inactivité maximale d'une session (jeton de rafraîchissement, glissante).
+    validity: P30D
+    # Fenêtre pendant laquelle l'ancien jeton de rafraîchissement reste accepté (requêtes concurrentes).
+    rotation-grace: PT1M
 management:
   endpoints:
     web:

@@ -36,6 +36,8 @@ cd mobile && npm test && npm run typecheck
 
 Le MongoDB embarqué 4.4 (binaire Debian 10) requiert `libssl1.1` sur l'hôte ;
 `EMBEDDED_MONGO_VERSION=7.0.14 mvn test` utilise une version récente (CPU AVX requis).
+Sans libssl1.1 ni AVX : extraire `libssl1.1` (paquet Debian 11) dans un dossier hors dépôt et lancer
+`LD_LIBRARY_PATH=<dossier>/usr/lib/x86_64-linux-gnu mvn test`.
 
 ## Environnement de test (Docker)
 
@@ -60,3 +62,42 @@ L'interface est construite pour être servie sous `/test/reveil/` (argument de b
 
 E-mail normalisé (trim + minuscules), unique (index MongoDB `uk_users_email`) ; mot de passe ≥ 8 caractères
 dont 1 chiffre, haché en bcrypt.
+
+## Authentification et sessions
+
+- **Jeton d'accès** : JWT HS256, 15 min (`reveil.jwt.validity`), claims `sub` (id utilisateur), `email`, `sid` (session).
+  À envoyer en `Authorization: Bearer <token>` ; toute route hors ouverture de session est protégée (Spring Security, 401 JSON).
+- **Session** (collection `sessions`) : une par appareil connecté, repérée par un jeton de rafraîchissement opaque
+  `<idSession>.<secret>` dont seul le hash SHA-256 est stocké. Expiration **glissante de 30 jours**
+  (`reveil.session.validity`, index TTL MongoDB) : sur mobile, la session reste ouverte sans ressaisie tant que
+  l'application est ouverte au moins une fois tous les 30 jours.
+- **Rotation** à chaque rafraîchissement ; l'ancien jeton reste accepté 1 min (`reveil.session.rotation-grace`,
+  requêtes concurrentes). Au-delà, sa réutilisation révoque la session (rejeu présumé).
+- **Déconnexion** : supprime la session de l'appareil courant ; son jeton d'accès est refusé immédiatement
+  (la session est vérifiée à chaque requête). Les autres appareils restent connectés.
+- Stockage client : trousseau sécurisé `expo-secure-store` (mobile), `localStorage` (web).
+
+### `POST /api/auth/login`
+
+```json
+{ "email": "alice@example.com", "password": "motdepasse1" }
+```
+
+- `200` → `{ "token": "<JWT>", "expiresIn": 900, "refreshToken": "<opaque>", "user": { "id": "...", "email": "..." } }`
+- `401` → `{ "message": "E-mail ou mot de passe incorrect", "errors": [] }` (identique quel que soit le champ en cause)
+
+`POST /api/auth/register` renvoie désormais la même structure (`201`).
+
+### `POST /api/auth/refresh`
+
+`{ "refreshToken": "..." }` → `200` nouvelle paire de jetons (même format que login) ; `401` session expirée/révoquée.
+
+### `POST /api/auth/logout`
+
+`{ "refreshToken": "..." }` (+ `Authorization` facultatif) → `204`, idempotent. Public : fonctionne même si le jeton
+d'accès a expiré.
+
+### `GET /api/auth/me`
+
+Protégé → `200 { "id": "...", "email": "..." }` ; `401` sans jeton valide ou session révoquée.
+

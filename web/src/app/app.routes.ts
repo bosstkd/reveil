@@ -4,6 +4,11 @@ import { authGuard } from './core/auth/auth.guard';
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'evenements' },
   {
+    path: 'connexion',
+    title: 'Se connecter — Reveil',
+    loadComponent: () => import('./features/auth/login/login').then((m) => m.Login),
+  },
+  {
     path: 'inscription',
     title: 'Créer un compte — Reveil',
     loadComponent: () => import('./features/auth/register/register').then((m) => m.Register),

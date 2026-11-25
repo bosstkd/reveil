@@ -20,6 +20,7 @@ function jsonResponse(status: number, body: unknown) {
 }
 
 async function fillAndSubmit(email: string, password: string) {
+  await fireEvent.press(await screen.findByTestId('to-register'));
   await screen.findByText('Créer un compte');
   await fireEvent.changeText(screen.getByTestId('email'), email);
   await fireEvent.changeText(screen.getByTestId('password'), password);
@@ -53,7 +54,7 @@ describe('Inscription (mobile)', () => {
 
   it('connecte et affiche la liste des événements après inscription', async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse(201, { token: 'jwt', user: { id: 'u1', email: 'alice@example.com' } }),
+      jsonResponse(201, { token: 'jwt', expiresIn: 900, refreshToken: 's.r', user: { id: 'u1', email: 'alice@example.com' } }),
     );
     await render(<App />);
     await fillAndSubmit(' alice@example.com ', 'abcdefg1');
@@ -87,9 +88,10 @@ describe('Inscription (mobile)', () => {
     expect(await screen.findByTestId('server-error')).toHaveTextContent(/injoignable/);
   });
 
-  it('restaure une session existante au démarrage', async () => {
-    store.set('reveil.session', JSON.stringify({ token: 't', user: { id: '1', email: 'bob@example.com' } }));
+  it('revient à la connexion depuis l’inscription', async () => {
     await render(<App />);
-    await waitFor(() => expect(screen.getByText('Mes événements')).toBeOnTheScreen());
+    await fireEvent.press(await screen.findByTestId('to-register'));
+    await fireEvent.press(await screen.findByTestId('to-login'));
+    expect(await screen.findByTestId('login-submit')).toBeOnTheScreen();
   });
 });

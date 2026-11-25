@@ -1,11 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { EventsScreen } from './src/screens/EventsScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
 import { RegisterScreen } from './src/screens/RegisterScreen';
 
 function Root() {
   const { session, ready } = useAuth();
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   if (!ready) {
     return (
       <View style={{ flex: 1, justifyContent: 'center' }}>
@@ -13,7 +16,12 @@ function Root() {
       </View>
     );
   }
-  return session ? <EventsScreen /> : <RegisterScreen />;
+  if (session) return <EventsScreen />;
+  return mode === 'login' ? (
+    <LoginScreen onRegister={() => setMode('register')} />
+  ) : (
+    <RegisterScreen onLogin={() => setMode('login')} />
+  );
 }
 
 export default function App() {

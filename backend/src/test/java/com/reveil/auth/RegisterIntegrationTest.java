@@ -53,6 +53,7 @@ class RegisterIntegrationTest {
                         .content(body("Bob@Example.com", "secret123")))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.user.email").value("bob@example.com"))
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         assertThat(elapsedMs).isLessThan(3000);

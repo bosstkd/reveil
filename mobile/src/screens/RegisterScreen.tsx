@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { RegisterError } from '../auth/authApi';
+import { AuthError } from '../auth/authApi';
 import { useAuth } from '../auth/AuthContext';
 import { PASSWORD_MIN_LENGTH, validateEmail, validatePassword } from '../auth/validation';
 
-export function RegisterScreen() {
+export function RegisterScreen({ onLogin }: { onLogin?: () => void }) {
   const { register } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +23,7 @@ export function RegisterScreen() {
       await register(email.trim(), password);
       // Succès : AuthProvider ouvre la session, App bascule sur la liste des événements.
     } catch (e) {
-      setServerError(e instanceof RegisterError ? e.message : "L'inscription a échoué.");
+      setServerError(e instanceof AuthError ? e.message : "L'inscription a échoué.");
       setSubmitting(false);
     }
   }
@@ -76,6 +76,12 @@ export function RegisterScreen() {
       >
         {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer mon compte</Text>}
       </Pressable>
+
+      {onLogin ? (
+        <Pressable testID="to-login" accessibilityRole="link" onPress={onLogin} style={styles.switch}>
+          <Text style={styles.link}>Déjà inscrit ? Se connecter</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -90,4 +96,6 @@ const styles = StyleSheet.create({
   button: { marginTop: 24, backgroundColor: '#3b5bdb', borderRadius: 8, padding: 14, alignItems: 'center' },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  switch: { marginTop: 20, alignItems: 'center' },
+  link: { color: '#3b5bdb' },
 });
