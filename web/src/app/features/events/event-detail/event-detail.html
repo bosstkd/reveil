@@ -1,0 +1,81 @@
+<main class="detail">
+  <a routerLink="/evenements" class="back" data-testid="detail-back">‹ Mes événements</a>
+
+  @if (error(); as message) {
+    <p class="error" role="alert" data-testid="detail-error">{{ message }}</p>
+  } @else if (event(); as event) {
+    @if (editing()) {
+      <app-event-form [event]="event" (updated)="onUpdated($event)" (gone)="onGone()" (cancelled)="editing.set(false)" />
+    } @else {
+      <article data-testid="event-detail" [class.past]="event.past">
+        <h1 data-testid="detail-title">{{ event.title }}</h1>
+        <p class="when">
+          <span data-testid="detail-date">{{ date(event) }}</span> à
+          <span data-testid="detail-time">{{ time(event) }}</span>
+        </p>
+        <span class="remaining" data-testid="detail-remaining">{{ remaining(event) }}</span>
+        @if (event.location) {
+          <p class="where" data-testid="detail-location">{{ event.location }}</p>
+        }
+
+        <section class="reminders" aria-labelledby="reminders-title">
+          <h2 id="reminders-title">Rappels</h2>
+          @if (event.reminders.length === 0) {
+            <p class="muted" data-testid="reminders-empty">Aucun rappel configuré.</p>
+          } @else {
+            <ul>
+              @for (r of event.reminders; track r.remindAt) {
+                <li data-testid="detail-reminder" [class]="'status-' + r.status">
+                  <strong>{{ delay(r.minutesBefore) }}</strong> · {{ at(event, r) }} ·
+                  <span class="status">{{ status[r.status] }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        <div class="actions">
+          <button type="button" (click)="startEditing()" data-testid="detail-edit">Modifier</button>
+          <button type="button" class="primary" (click)="choosePhoto()" [disabled]="uploading()" data-testid="add-photo">
+            {{ uploading() ? 'Envoi en cours…' : '📷 Ajouter une photo' }}
+          </button>
+          <input #fileInput type="file" [accept]="accept" capture="environment" hidden
+                 (change)="onFileSelected(fileInput)" data-testid="photo-input" />
+        </div>
+      </article>
+    }
+
+    @if (notice(); as message) {
+      <p class="notice" role="status" data-testid="detail-notice">{{ message }}</p>
+    }
+    @if (uploadError(); as message) {
+      <p class="error" role="alert" data-testid="upload-error">{{ message }}</p>
+    }
+
+    <section class="photos" aria-labelledby="photos-title">
+      <h2 id="photos-title">Photos</h2>
+      @if (photosError(); as message) {
+        <p class="error" data-testid="photos-error">{{ message }}</p>
+      } @else if (photos() === null) {
+        <p class="muted" data-testid="photos-loading">Chargement des photos…</p>
+      } @else if (photos()!.length === 0) {
+        <p class="muted" data-testid="photos-empty">Aucune photo pour cet événement.</p>
+      } @else {
+        <ul class="gallery" data-testid="gallery">
+          @for (photo of photos(); track photo.id) {
+            <li>
+              @if (thumbs()[photo.id]; as src) {
+                <img [src]="src" alt="Photo de l'événement" width="120" height="120" loading="lazy"
+                     data-testid="gallery-photo" />
+              } @else {
+                <span class="placeholder" data-testid="gallery-placeholder"></span>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  } @else {
+    <p class="muted" data-testid="detail-loading">Chargement…</p>
+  }
+</main>

@@ -147,7 +147,25 @@ sélecteur natif `@react-native-community/datetimepicker`). Le fuseau est celui 
 ### `GET /api/events/{id}` (protégé)
 
 Détail d'un événement de l'utilisateur connecté (même format que la liste). `404 { "message": "Événement introuvable" }`
-s'il n'existe pas, a été supprimé ou appartient à un autre utilisateur.
+s'il n'existe pas, a été supprimé ou appartient à un autre utilisateur (pas de fuite d'existence).
+
+Tout événement renvoyé par l'API (création, liste, détail, modification) porte ses **rappels configurés** :
+
+```json
+"reminders": [{ "minutesBefore": 60, "remindAt": "2026-12-24T18:30:00Z", "status": "scheduled" }]
+```
+
+`status` : `scheduled` (programmé), `sent` (envoyé) ou `skipped` (abandonné : l'événement avait déjà commencé).
+Liste vide si aucun rappel (événement créé dans le passé). Le temps restant est calculé par les clients à partir de
+`startsAt`. Les photos restent servies par `GET /api/events/{id}/photos` (chargées en parallèle par les clients).
+
+Écran / page de détail (web : `/evenements/:id`, ouvert depuis le titre d'un événement de la liste ; mobile : appui
+sur un événement) : titre, date, heure (fuseau de saisie), lieu, temps restant (rafraîchi chaque minute), rappels
+(« 1 h avant · 24 déc. 2026, 19:30 · programmé »), galerie de miniatures (la plus récente d'abord), boutons
+« Modifier » (formulaire pré-rempli) et ajout de photo (mobile : « Prendre une photo » ; web : « Ajouter une photo »,
+sélecteur de fichier JPEG/PNG ≤ 10 Mo, appareil photo proposé sur navigateur mobile). Sur le web, les miniatures
+(routes protégées) sont téléchargées avec le jeton puis affichées via des URL `blob:` locales, libérées en quittant
+la page.
 
 ### `PUT /api/events/{id}` (protégé)
 

@@ -59,7 +59,8 @@ class EventControllerTest {
     private static EventResponse response(boolean past) {
         return new EventResponse("e1", "Concert", Instant.parse("2026-12-24T19:30:00Z"),
                 LocalDateTime.parse("2026-12-24T20:30:00"), "Europe/Paris", null, past,
-                past ? List.of(EventResponse.PAST_WARNING) : List.of());
+                past ? List.of(EventResponse.PAST_WARNING) : List.of(),
+                past ? List.of() : List.of(new EventReminder(60, Instant.parse("2026-12-24T18:30:00Z"), "scheduled")));
     }
 
     @Test
@@ -169,7 +170,13 @@ class EventControllerTest {
         mvc.perform(get("/api/events/e1").header("Authorization", "Bearer good"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("e1"))
-                .andExpect(jsonPath("$.title").value("Concert"));
+                .andExpect(jsonPath("$.title").value("Concert"))
+                .andExpect(jsonPath("$.startsAt").value("2026-12-24T19:30:00Z"))
+                .andExpect(jsonPath("$.localDateTime").value("2026-12-24T20:30:00"))
+                .andExpect(jsonPath("$.timeZone").value("Europe/Paris"))
+                .andExpect(jsonPath("$.reminders[0].minutesBefore").value(60))
+                .andExpect(jsonPath("$.reminders[0].remindAt").value("2026-12-24T18:30:00Z"))
+                .andExpect(jsonPath("$.reminders[0].status").value("scheduled"));
     }
 
     @Test

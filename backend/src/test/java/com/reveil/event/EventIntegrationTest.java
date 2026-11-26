@@ -261,4 +261,29 @@ class EventIntegrationTest {
                 .andExpect(jsonPath("$.title").value("Concert"))
                 .andExpect(jsonPath("$.location").value("Olympia"));
     }
+
+    @Test
+    void detailReturnsInformationAndConfiguredRemindersToTheOwnerOnly() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String bob = tokenFor("bob@example.com");
+        String id = createConcert(alice);
+
+        mvc.perform(get("/api/events/" + id).header("Authorization", alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.title").value("Concert"))
+                .andExpect(jsonPath("$.startsAt").value("2099-12-24T19:30:00Z"))
+                .andExpect(jsonPath("$.localDateTime").value("2099-12-24T20:30:00"))
+                .andExpect(jsonPath("$.timeZone").value("Europe/Paris"))
+                .andExpect(jsonPath("$.location").value("Olympia"))
+                .andExpect(jsonPath("$.past").value(false))
+                .andExpect(jsonPath("$.reminders.length()").value(1))
+                .andExpect(jsonPath("$.reminders[0].minutesBefore").value(60))
+                .andExpect(jsonPath("$.reminders[0].remindAt").value("2099-12-24T18:30:00Z"))
+                .andExpect(jsonPath("$.reminders[0].status").value("scheduled"));
+
+        // Un autre utilisateur ne voit pas l'événement (pas de fuite d'existence) ; identifiant inconnu : 404.
+        mvc.perform(get("/api/events/" + id).header("Authorization", bob)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/events/inconnu").header("Authorization", alice)).andExpect(status().isNotFound());
+    }
 }

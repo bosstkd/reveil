@@ -11,6 +11,20 @@ export interface ReveilEvent {
   location: string | null;
   past: boolean;
   warnings: string[];
+  /** Rappels configurés (programmés ou déjà traités). */
+  reminders: EventReminder[];
+}
+
+/** Statut d'un rappel : programmé, envoyé, ou abandonné (l'événement avait déjà commencé). */
+export type ReminderStatus = 'scheduled' | 'sent' | 'skipped';
+
+/** Rappel configuré d'un événement, tel que renvoyé par l'API. */
+export interface EventReminder {
+  /** Délai entre le rappel et le début de l'événement, en minutes. */
+  minutesBefore: number;
+  /** Échéance du rappel (instant UTC, ISO-8601). */
+  remindAt: string;
+  status: ReminderStatus;
 }
 
 /** Onglet de la liste : à venir (date ≥ maintenant) ou passés. */
@@ -140,4 +154,39 @@ export function timeUntil(startsAt: string, now: Date = new Date()): string {
   const n = Math.floor(abs / unit[0]);
   const label = `${n} ${n > 1 ? unit[2] : unit[1]}`;
   return diff > 0 ? `dans ${label}` : `il y a ${label}`;
+}
+
+/** Délai d'un rappel (« 1 h avant », « 30 min avant », « 1 h 30 min avant », « 2 jours avant »). */
+export function reminderDelay(minutesBefore: number): string {
+  if (minutesBefore <= 0) return 'Au début';
+  if (minutesBefore % 1440 === 0) {
+    const days = minutesBefore / 1440;
+    return `${days} ${days > 1 ? 'jours' : 'jour'} avant`;
+  }
+  const h = Math.floor(minutesBefore / 60);
+  const m = minutesBefore % 60;
+  if (h === 0) return `${m} min avant`;
+  return `${h} h${m ? ` ${m} min` : ''} avant`;
+}
+
+export const REMINDER_STATUS: Record<ReminderStatus, string> = {
+  scheduled: 'programmé',
+  sent: 'envoyé',
+  skipped: 'non envoyé',
+};
+
+/**
+ * Libellé complet d'un rappel, heure dans le fuseau de saisie de l'événement :
+ * « 1 h avant · 24 déc. 2099, 19:30 · programmé ».
+ */
+export function reminderLabel(event: ReveilEvent, reminder: EventReminder): string {
+  let at: string;
+  try {
+    at = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short', timeZone: event.timeZone }).format(
+      new Date(reminder.remindAt),
+    );
+  } catch {
+    at = reminder.remindAt;
+  }
+  return `${reminderDelay(reminder.minutesBefore)} · ${at} · ${REMINDER_STATUS[reminder.status] ?? reminder.status}`;
 }

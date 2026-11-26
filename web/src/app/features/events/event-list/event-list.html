@@ -54,7 +54,9 @@
             <app-event-form [event]="event" (updated)="onUpdated($event)" (gone)="onGone()"
                             (cancelled)="editingId.set(null)" />
           } @else {
-            <strong data-testid="item-title">{{ event.title }}</strong>
+            <a class="title" [routerLink]="['/evenements', event.id]" data-testid="item-link">
+              <strong data-testid="item-title">{{ event.title }}</strong>
+            </a>
             <span class="when">
               <span data-testid="item-date">{{ date(event) }}</span> à
               <span data-testid="item-time">{{ time(event) }}</span>

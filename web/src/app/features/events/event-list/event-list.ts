@@ -1,5 +1,5 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/auth/auth.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
@@ -19,11 +19,11 @@ const CLOCK_TICK_MS = 60_000;
 
 /**
  * Liste des événements de l'utilisateur (onglets « À venir » / « Passés »), avec création, modification
- * et suppression (après confirmation) en place.
+ * et suppression (après confirmation) en place ; le titre ouvre le détail de l'événement.
  */
 @Component({
   selector: 'app-event-list',
-  imports: [EventForm],
+  imports: [EventForm, RouterLink],
   templateUrl: './event-list.html',
   styleUrl: './event-list.css',
 })

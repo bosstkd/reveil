@@ -54,6 +54,11 @@ export class EventService {
     );
   }
 
+  /** Détail d'un événement de l'utilisateur connecté (404 s'il n'existe pas ou n'est pas à lui). */
+  get(id: string): Observable<ReveilEvent> {
+    return this.http.get<ReveilEvent>(`api/events/${encodeURIComponent(id)}`);
+  }
+
   /** Crée l'événement et l'ajoute immédiatement à l'onglet correspondant (passé ou à venir). */
   create(payload: CreateEventPayload): Observable<ReveilEvent> {
     return this.http.post<ReveilEvent>('api/events', payload).pipe(

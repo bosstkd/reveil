@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { API_URL } from '../config';
-import { ReveilEvent, eventDate, eventTime, timeUntil } from '../events/events';
+import { ReveilEvent, eventDate, eventTime, reminderLabel, timeUntil } from '../events/events';
 import { EVENT_NOT_FOUND, deleteEvent, getEvent } from '../events/eventsApi';
 import { compressPhoto, ensureCameraPermission, takePhoto } from '../photos/camera';
 import type { EventPhoto, PreparedPhoto } from '../photos/photos';
@@ -17,9 +17,12 @@ export const DELETE_MESSAGE = 'Ses rappels programmés et ses photos seront auss
 
 type Busy = 'idle' | 'camera' | 'preparing' | 'uploading';
 
+/** Rafraîchissement du temps restant affiché. */
+export const CLOCK_TICK_MS = 60_000;
+
 /**
- * Détail d'un événement (depuis la liste, une notification de rappel ou un lien reveil://events/<id>),
- * avec sa galerie, la prise de photo, la modification et la suppression (après confirmation).
+ * Détail d'un événement (depuis la liste, une notification de rappel ou un lien reveil://events/<id>) :
+ * titre, date, heure, lieu, temps restant (rafraîchi chaque minute), rappels configurés, galerie de miniatures, la prise de photo, la modification et la suppression (après confirmation).
  * Après suppression, l'écran se ferme (`onBack`) : la liste, remontée, est rechargée.
  */
 export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack: () => void }) {
@@ -37,7 +40,13 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [now, setNow] = useState(() => new Date());
   const mounted = useRef(true);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), CLOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -158,6 +167,7 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
           onCancel={() => setEditing(false)}
           onUpdated={(updated) => {
             setEvent(updated);
+            setNow(new Date());
             setEditing(false);
             setNotice(updated.warnings?.length ? updated.warnings.join('\n') : 'Événement modifié.');
           }}
@@ -171,13 +181,28 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
             <Text testID="detail-date">{eventDate(event)}</Text> à <Text testID="detail-time">{eventTime(event)}</Text>
           </Text>
           <Text testID="detail-remaining" style={styles.badge}>
-            {timeUntil(event.startsAt)}
+            {timeUntil(event.startsAt, now)}
           </Text>
           {event.location ? (
             <Text testID="detail-location" style={styles.meta}>
               {event.location}
             </Text>
           ) : null}
+
+          <View testID="detail-reminders" style={styles.reminders}>
+            <Text style={styles.subTitle}>Rappels</Text>
+            {(event.reminders ?? []).length === 0 ? (
+              <Text testID="reminders-empty" style={styles.meta}>
+                Aucun rappel configuré.
+              </Text>
+            ) : (
+              (event.reminders ?? []).map((r) => (
+                <Text key={`${r.minutesBefore}-${r.remindAt}`} testID="detail-reminder" style={styles.meta}>
+                  🔔 {reminderLabel(event, r)}
+                </Text>
+              ))
+            )}
+          </View>
 
           <View style={styles.actions}>
             <Pressable
@@ -306,6 +331,8 @@ const styles = StyleSheet.create({
   dangerText: { color: '#c92a2a' },
   noticeBox: { marginTop: 8, padding: 8, borderRadius: 6, backgroundColor: '#fff3bf', color: '#8a6100' },
   sectionTitle: { fontSize: 20, fontWeight: '600' },
+  reminders: { marginTop: 12 },
+  subTitle: { fontSize: 16, fontWeight: '600', marginBottom: 2 },
   primary: { backgroundColor: '#3b5bdb', borderRadius: 8, padding: 12, alignItems: 'center', marginVertical: 12 },
   primaryText: { color: '#fff', fontWeight: '600' },
   disabled: { opacity: 0.5 },

@@ -27,6 +27,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class EventServiceTest {
 
@@ -164,6 +165,47 @@ class EventServiceTest {
 
         assertThat(service.get("u1", "e1").title()).isEqualTo("Concert");
         assertThatThrownBy(() -> service.get("u2", "e1")).isInstanceOf(EventNotFoundException.class);
+    }
+
+    @Test
+    void detailListsTheScheduledReminder() {
+        Event e = new Event("Concert", Instant.parse("2026-12-24T19:30:00Z"), "Europe/Paris", "Olympia", "u1");
+        e.scheduleReminder(Instant.parse("2026-12-24T18:30:00Z"));
+        when(repository.findByIdAndOwnerId("e1", "u1")).thenReturn(Optional.of(e));
+
+        EventResponse res = service.get("u1", "e1");
+
+        assertThat(res.location()).isEqualTo("Olympia");
+        assertThat(res.localDateTime()).isEqualTo(LocalDateTime.of(2026, 12, 24, 20, 30));
+        assertThat(res.reminders()).containsExactly(
+                new EventReminder(60, Instant.parse("2026-12-24T18:30:00Z"), "scheduled"));
+    }
+
+    @Test
+    void detailListsAnAlreadySentOrSkippedReminder() {
+        Instant startsAt = Instant.parse("2026-11-25T11:00:00Z");
+        Event sent = new Event("Réunion", startsAt, "UTC", null, "u1");
+        ReflectionTestUtils.setField(sent, "reminderSentAt", Instant.parse("2026-11-25T10:00:00Z"));
+        Event skipped = new Event("Réunion", startsAt, "UTC", null, "u1");
+        ReflectionTestUtils.setField(skipped, "reminderSentAt", Instant.parse("2026-11-25T11:30:00Z"));
+        when(repository.findByIdAndOwnerId("sent", "u1")).thenReturn(Optional.of(sent));
+        when(repository.findByIdAndOwnerId("skipped", "u1")).thenReturn(Optional.of(skipped));
+
+        assertThat(service.get("u1", "sent").reminders()).containsExactly(
+                new EventReminder(60, Instant.parse("2026-11-25T10:00:00Z"), "sent"));
+        assertThat(service.get("u1", "skipped").reminders()).extracting(EventReminder::status)
+                .containsExactly("skipped");
+    }
+
+    @Test
+    void detailOfAnEventWithoutReminderHasAnEmptyList() {
+        Event e = new Event("Hier", Instant.parse("2026-11-24T08:00:00Z"), "UTC", null, "u1");
+        when(repository.findByIdAndOwnerId("e1", "u1")).thenReturn(Optional.of(e));
+
+        EventResponse res = service.get("u1", "e1");
+
+        assertThat(res.past()).isTrue();
+        assertThat(res.reminders()).isEmpty();
     }
 
     // --- Modification -------------------------------------------------------------------------------------

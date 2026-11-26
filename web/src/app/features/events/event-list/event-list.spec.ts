@@ -15,6 +15,7 @@ const event = (over: Partial<ReveilEvent> = {}): ReveilEvent => ({
   location: 'Olympia',
   past: false,
   warnings: [],
+  reminders: [],
   ...over,
 });
 
@@ -82,6 +83,12 @@ describe('EventList', () => {
     expect(q('item-remaining')!.textContent).toMatch(/^dans \d+ ans$/);
     expect(q('event-list')!.textContent).toContain('Olympia');
     expect(q('tab-upcoming')!.textContent).toContain('(1)');
+  });
+
+  it('le titre de chaque événement mène à son détail', () => {
+    list('upcoming').flush(page('upcoming', [event({ id: 'e42' })]));
+    render();
+    expect(q<HTMLAnchorElement>('item-link')!.getAttribute('href')).toBe('/evenements/e42');
   });
 
   it('conserve l’ordre chronologique croissant des événements à venir', () => {

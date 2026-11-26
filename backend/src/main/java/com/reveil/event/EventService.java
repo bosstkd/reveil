@@ -49,7 +49,7 @@ public class EventService {
             event.scheduleReminder(dueAt);
         }
         Event saved = events.save(event);
-        return EventResponse.of(saved, now);
+        return EventResponse.of(saved, now, reminders.leadTime());
     }
 
     /**
@@ -66,7 +66,7 @@ public class EventService {
         EventChanges changes = new EventChanges(request.title().trim(), startsAt, zone, location(request),
                 dateChanged, dateChanged ? reminderDueAt(startsAt, now) : null);
         Event updated = events.applyChanges(id, ownerId, changes).orElseThrow(EventNotFoundException::new);
-        return EventResponse.of(updated, now);
+        return EventResponse.of(updated, now, reminders.leadTime());
     }
 
     /**
@@ -79,10 +79,13 @@ public class EventService {
         publisher.publishEvent(new EventDeleted(id, ownerId));
     }
 
-    /** Événement de {@code ownerId} ; introuvable (ou appartenant à un autre utilisateur) : 404. */
+    /**
+     * Détail de l'événement de {@code ownerId}, avec ses rappels configurés (temps restant calculé par les clients
+     * à partir de {@code startsAt}). Introuvable (ou appartenant à un autre utilisateur) : 404.
+     */
     public EventResponse get(String ownerId, String id) {
         return events.findByIdAndOwnerId(id, ownerId)
-                .map(e -> EventResponse.of(e, clock.instant()))
+                .map(e -> EventResponse.of(e, clock.instant(), reminders.leadTime()))
                 .orElseThrow(EventNotFoundException::new);
     }
 
@@ -121,7 +124,7 @@ public class EventService {
                         PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "startsAt")))
                 : events.findByOwnerIdAndStartsAtLessThan(ownerId, now,
                         PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "startsAt")));
-        List<EventResponse> items = result.getContent().stream().map(e -> EventResponse.of(e, now)).toList();
+        List<EventResponse> items = result.getContent().stream().map(e -> EventResponse.of(e, now, reminders.leadTime())).toList();
         return new EventPage(period.name().toLowerCase(Locale.ROOT), items, page, size, result.getTotalElements(),
                 result.hasNext());
     }
