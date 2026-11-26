@@ -19,6 +19,18 @@ reveil:
     validity: P30D
     # Fenêtre pendant laquelle l'ancien jeton de rafraîchissement reste accepté (requêtes concurrentes).
     rotation-grace: PT1M
+  reminders:
+    # Rappel par défaut : 1 heure avant l'événement.
+    lead-time: PT1H
+    # Planificateur : chaque minute à la seconde 0 ; anticipation de quelques secondes.
+    cron: "0 * * * * *"
+    lookahead: PT5S
+  push:
+    fcm:
+      # Projet Firebase (REVEIL_FCM_PROJECT_ID). Vide => notifications seulement journalisées.
+      project-id: ${REVEIL_FCM_PROJECT_ID:}
+      # Contenu JSON du compte de service (REVEIL_FCM_CREDENTIALS_JSON) ; vide => GOOGLE_APPLICATION_CREDENTIALS.
+      credentials-json: ${REVEIL_FCM_CREDENTIALS_JSON:}
 management:
   endpoints:
     web:

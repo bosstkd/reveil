@@ -1,19 +1,23 @@
 package com.reveil.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.reveil.reminder.ReminderSettings;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -33,7 +37,8 @@ class EventServiceTest {
     void setUp() {
         repository = mock(EventRepository.class);
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        service = new EventService(repository, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new EventService(repository, new ReminderSettings(Duration.ofHours(1), Duration.ofSeconds(5)),
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private Event saved() {
@@ -124,5 +129,36 @@ class EventServiceTest {
         assertThat(page.when()).isEqualTo("past");
         assertThat(page.items().get(0).past()).isTrue();
         assertThat(page.hasNext()).isFalse();
+    }
+
+    @Test
+    void schedulesTheDefaultReminderOneHourBeforeTheEvent() {
+        service.create("u1", new CreateEventRequest("Concert", LocalDate.of(2026, 12, 24), LocalTime.of(20, 30),
+                "Europe/Paris", null));
+        assertThat(saved().getReminderDueAt()).isEqualTo(Instant.parse("2026-12-24T18:30:00Z"));
+    }
+
+    @Test
+    void eventStartingWithinTheHourGetsAnAlreadyDueReminder() {
+        service.create("u1", new CreateEventRequest("Bientôt", LocalDate.of(2026, 11, 25), LocalTime.of(12, 20),
+                "UTC", null));
+        assertThat(saved().getReminderDueAt()).isEqualTo(Instant.parse("2026-11-25T11:20:00Z")).isBefore(NOW);
+    }
+
+    @Test
+    void pastEventGetsNoReminder() {
+        service.create("u1", new CreateEventRequest("Hier", LocalDate.of(2026, 11, 24), LocalTime.of(8, 0),
+                "UTC", null));
+        assertThat(saved().getReminderDueAt()).isNull();
+    }
+
+    @Test
+    void getReturnsTheOwnedEventOrThrowsNotFound() {
+        Event e = new Event("Concert", Instant.parse("2026-12-24T19:30:00Z"), "Europe/Paris", null, "u1");
+        when(repository.findByIdAndOwnerId("e1", "u1")).thenReturn(Optional.of(e));
+        when(repository.findByIdAndOwnerId("e1", "u2")).thenReturn(Optional.empty());
+
+        assertThat(service.get("u1", "e1").title()).isEqualTo("Concert");
+        assertThatThrownBy(() -> service.get("u2", "e1")).isInstanceOf(EventNotFoundException.class);
     }
 }

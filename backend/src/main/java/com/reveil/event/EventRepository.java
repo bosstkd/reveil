@@ -1,6 +1,7 @@
 package com.reveil.event;
 
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
@@ -13,4 +14,6 @@ public interface EventRepository extends MongoRepository<Event, String> {
 
     /** Passés : tri à fournir dans {@code pageable} (startsAt décroissant). */
     Page<Event> findByOwnerIdAndStartsAtLessThan(String ownerId, Instant before, Pageable pageable);
+
+    Optional<Event> findByIdAndOwnerId(String id, String ownerId);
 }

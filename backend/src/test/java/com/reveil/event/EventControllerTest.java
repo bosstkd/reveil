@@ -159,4 +159,26 @@ class EventControllerTest {
                 .andExpect(jsonPath("$.errors[0].field").value(name));
         verify(eventService, never()).list(any(), any(), anyInt(), anyInt());
     }
+
+    @Test
+    void getReturnsTheEventOfTheCurrentUser() throws Exception {
+        when(eventService.get("u1", "e1")).thenReturn(response(false));
+        mvc.perform(get("/api/events/e1").header("Authorization", "Bearer good"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("e1"))
+                .andExpect(jsonPath("$.title").value("Concert"));
+    }
+
+    @Test
+    void getUnknownOrDeletedEventReturns404() throws Exception {
+        when(eventService.get("u1", "gone")).thenThrow(new EventNotFoundException());
+        mvc.perform(get("/api/events/gone").header("Authorization", "Bearer good"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Événement introuvable"));
+    }
+
+    @Test
+    void getRequiresAuthentication() throws Exception {
+        mvc.perform(get("/api/events/e1")).andExpect(status().isUnauthorized());
+    }
 }

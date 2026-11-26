@@ -43,3 +43,20 @@ export async function createEvent(authFetch: AuthFetch, payload: CreateEventPayl
   }
   throw new EventError("La création de l'événement a échoué. Réessayez dans un instant.", res.status);
 }
+
+/** Message affiché quand l'événement ouvert (notification, lien) n'existe plus. */
+export const EVENT_NOT_FOUND = "Cet événement n'existe plus.";
+
+/** GET /api/events/{id} : détail d'un événement de l'utilisateur connecté. */
+export async function getEvent(authFetch: AuthFetch, id: string): Promise<ReveilEvent> {
+  let res: Response;
+  try {
+    res = await authFetch(`/api/events/${encodeURIComponent(id)}`);
+  } catch {
+    throw new EventError(UNREACHABLE, 0);
+  }
+  const body = await res.json().catch(() => null);
+  if (res.ok && body?.id) return body as ReveilEvent;
+  if (res.status === 404) throw new EventError(EVENT_NOT_FOUND, 404);
+  throw new EventError("Impossible de charger l'événement.", res.status);
+}

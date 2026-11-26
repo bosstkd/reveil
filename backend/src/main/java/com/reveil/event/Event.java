@@ -4,6 +4,7 @@ import java.time.Instant;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
@@ -34,6 +35,16 @@ public class Event {
     @CreatedDate
     private Instant createdAt;
 
+    /**
+     * Échéance du rappel push (UTC). Absent si aucun rappel n'est à envoyer ; retiré atomiquement par le
+     * planificateur au moment de l'envoi. Supprimer l'événement supprime donc aussi son rappel.
+     */
+    @Indexed(name = "ix_events_reminder_due_at", sparse = true)
+    private Instant reminderDueAt;
+
+    /** Date de traitement du rappel (envoyé, ou abandonné si l'événement avait déjà commencé). */
+    private Instant reminderSentAt;
+
     protected Event() {
     }
 
@@ -43,6 +54,11 @@ public class Event {
         this.timeZone = timeZone;
         this.location = location;
         this.ownerId = ownerId;
+    }
+
+    /** Programme le rappel à {@code dueAt}. */
+    public void scheduleReminder(Instant dueAt) {
+        this.reminderDueAt = dueAt;
     }
 
     public String getId() {
@@ -71,5 +87,13 @@ public class Event {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getReminderDueAt() {
+        return reminderDueAt;
+    }
+
+    public Instant getReminderSentAt() {
+        return reminderSentAt;
     }
 }

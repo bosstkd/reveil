@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -50,5 +51,11 @@ public class EventController {
             throw new InvalidListQueryException("size", "La taille de page doit être comprise entre 1 et " + MAX_PAGE_SIZE);
         }
         return eventService.list(current.id(), period, page, size);
+    }
+
+    /** {@code GET /api/events/{id}} : détail d'un événement de l'utilisateur connecté (404 sinon). */
+    @GetMapping("/{id}")
+    public EventResponse get(@PathVariable String id, @AuthenticationPrincipal AuthenticatedUser current) {
+        return eventService.get(current.id(), id);
     }
 }

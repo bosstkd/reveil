@@ -25,6 +25,9 @@ Variables d'environnement de l'API :
 
 - `SPRING_DATA_MONGODB_URI` — URI MongoDB (défaut `mongodb://localhost:27017/reveil`)
 - `REVEIL_JWT_SECRET` — clé de signature des jetons (≥ 32 octets). Absente : clé éphémère.
+- `REVEIL_FCM_PROJECT_ID` — projet Firebase pour l'envoi des notifications push. Absent : envois seulement journalisés.
+- `REVEIL_FCM_CREDENTIALS_JSON` — contenu JSON du compte de service Firebase (rôle « Firebase Cloud Messaging API Admin »).
+  Absent : `GOOGLE_APPLICATION_CREDENTIALS` (chemin d'un fichier) est utilisé. Jamais dans le dépôt.
 
 ## Tests
 
@@ -140,3 +143,50 @@ l'unité inférieure, rafraîchi chaque minute). Liste à venir vide : bouton «
 Clients : formulaire de création sur l'écran « Mes événements » (web : `<input type="date|time">` ; mobile :
 sélecteur natif `@react-native-community/datetimepicker`). Le fuseau est celui du navigateur/appareil
 (`Intl`). Une date passée affiche un avertissement sans bloquer ; l'événement créé est ajouté à la liste sans rechargement.
+
+### `GET /api/events/{id}` (protégé)
+
+Détail d'un événement de l'utilisateur connecté (même format que la liste). `404 { "message": "Événement introuvable" }`
+s'il n'existe pas, a été supprimé ou appartient à un autre utilisateur.
+
+## Rappels (notifications push)
+
+- **Rappel par défaut 1 h avant** (`reveil.reminders.lead-time`) : à la création, l'événement reçoit un champ
+  `reminderDueAt = startsAt − 1 h` (index `ix_events_reminder_due_at`). Événement passé : pas de rappel ;
+  événement dans moins d'une heure : rappel envoyé au prochain passage. Au démarrage, les événements à venir créés
+  avant cette fonctionnalité reçoivent leur rappel.
+- **Planificateur** (`ReminderScheduler`) : chaque minute à la seconde 0 (`reveil.reminders.cron`), avec 5 s
+  d'anticipation (`reveil.reminders.lookahead`). Chaque rappel échu est pris et marqué traité (`reminderSentAt`)
+  par un `findAndModify` atomique : pas de double envoi, même avec plusieurs instances. Un rappel dont l'événement
+  a déjà commencé (API arrêtée) est abandonné.
+- **Événement supprimé** : le rappel est porté par le document de l'événement ; il disparaît avec lui.
+- **Envoi** (`FcmPushSender`) : API FCM HTTP v1 ; Android en direct, iOS relayé par FCM vers APNs. Message
+  « notification » (affiché par l'OS application fermée), priorité haute (Android `HIGH`, APNs `10`), expiration
+  à l'heure de l'événement, données `{ type: "event-reminder", eventId, link: "reveil://events/<id>" }`.
+  Texte : « Rappel : Concert » / « Commence dans 1 h, à 20:30 · Olympia » (heure dans le fuseau de saisie).
+- **Jetons invalides** : `UNREGISTERED`, `SENDER_ID_MISMATCH` ou `INVALID_ARGUMENT` portant sur le jeton → jeton
+  supprimé. Autres erreurs (401, 429, 5xx, réseau) : jeton conservé, rappel non renvoyé.
+
+### `PUT /api/devices` (protégé)
+
+```json
+{ "token": "<jeton FCM>", "platform": "android" }
+```
+
+`204`, idempotent. Collection `device_tokens` : `token` (unique, `uk_device_tokens_token`), `userId`
+(`ix_device_tokens_user`), `sessionId`, `platform`. Un jeton déjà connu est rattaché au dernier compte connecté
+sur l'appareil. Seuls les appareils dont la session est active reçoivent les rappels (après déconnexion, le jeton
+est supprimé au prochain envoi). `400` : jeton vide, plate-forme absente ou inconnue.
+
+### Mobile
+
+- `@react-native-firebase/messaging` (FCM, + APNs sur iOS) : nécessite un **build de développement**
+  (`npx expo prebuild` / `npx expo run:android|ios`), pas Expo Go.
+- Fichiers Firebase du projet à déposer (non versionnés) : `mobile/google-services.json`,
+  `mobile/GoogleService-Info.plist`. Sur iOS, la clé APNs (.p8) est à déclarer dans la console Firebase.
+- **Premier lancement** : demande d'autorisation (Android 13+ : `POST_NOTIFICATIONS` ; iOS : alerte système),
+  une seule fois (indicateur `reveil.notifications.asked`).
+- Une fois connecté, le jeton FCM est envoyé à `PUT /api/devices`, puis à chaque renouvellement.
+- **Appui sur la notification** (application fermée ou en arrière-plan) ou lien `reveil://events/<id>` :
+  ouvre l'écran de détail de l'événement (après connexion si nécessaire ; « Cet événement n'existe plus. » si
+  supprimé). Application au premier plan : une alerte propose « Voir ».

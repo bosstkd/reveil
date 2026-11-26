@@ -2,6 +2,7 @@ package com.reveil.config;
 
 import com.reveil.auth.EmailAlreadyUsedException;
 import com.reveil.auth.InvalidCredentialsException;
+import com.reveil.event.EventNotFoundException;
 import com.reveil.event.InvalidListQueryException;
 import com.reveil.session.InvalidRefreshTokenException;
 import java.util.LinkedHashMap;
@@ -41,6 +42,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidListQueryException.class)
     public ResponseEntity<Map<String, Object>> invalidListQuery(InvalidListQueryException e) {
         return body(HttpStatus.BAD_REQUEST, "Paramètres invalides", List.of(new FieldError(e.getField(), e.getMessage())));
+    }
+
+    @ExceptionHandler(EventNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> eventNotFound(EventNotFoundException e) {
+        return body(HttpStatus.NOT_FOUND, e.getMessage(), List.of());
     }
 
     /** Paramètre de requête non convertible (ex. {@code page=abc}). */

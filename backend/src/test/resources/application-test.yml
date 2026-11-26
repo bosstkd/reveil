@@ -5,3 +5,7 @@ de:
         # 4.4 : même version que docker-compose.devpilot.yml (dernière série sans exigence CPU AVX).
         # Surcharger via EMBEDDED_MONGO_VERSION (ex. 7.0.14) si besoin.
         version: ${EMBEDDED_MONGO_VERSION:4.4.29}
+reveil:
+  reminders:
+    # Les tests déclenchent eux-mêmes le traitement des rappels.
+    scheduler-enabled: false

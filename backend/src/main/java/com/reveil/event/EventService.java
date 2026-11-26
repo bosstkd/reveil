@@ -1,5 +1,6 @@
 package com.reveil.event;
 
+import com.reveil.reminder.ReminderSettings;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -16,15 +17,17 @@ import org.springframework.stereotype.Service;
 public class EventService {
 
     private final EventRepository events;
+    private final ReminderSettings reminders;
     private final Clock clock;
 
     @Autowired
-    public EventService(EventRepository events) {
-        this(events, Clock.systemUTC());
+    public EventService(EventRepository events, ReminderSettings reminders) {
+        this(events, reminders, Clock.systemUTC());
     }
 
-    EventService(EventRepository events, Clock clock) {
+    EventService(EventRepository events, ReminderSettings reminders, Clock clock) {
         this.events = events;
+        this.reminders = reminders;
         this.clock = clock;
     }
 
@@ -37,8 +40,22 @@ public class EventService {
         String zone = request.timeZone().trim();
         Instant startsAt = ZonedDateTime.of(request.date(), request.time().withNano(0), ZoneId.of(zone)).toInstant();
         String location = request.location() == null || request.location().isBlank() ? null : request.location().trim();
-        Event saved = events.save(new Event(request.title().trim(), startsAt, zone, location, ownerId));
-        return EventResponse.of(saved, clock.instant());
+        Instant now = clock.instant();
+        Event event = new Event(request.title().trim(), startsAt, zone, location, ownerId);
+        // Rappel par défaut (1 h avant). Événement passé : aucun rappel. Échéance déjà dépassée
+        // (événement dans moins d'une heure) : le rappel part au prochain passage du planificateur.
+        if (startsAt.isAfter(now)) {
+            event.scheduleReminder(startsAt.minus(reminders.leadTime()));
+        }
+        Event saved = events.save(event);
+        return EventResponse.of(saved, now);
+    }
+
+    /** Événement de {@code ownerId} ; introuvable (ou appartenant à un autre utilisateur) : 404. */
+    public EventResponse get(String ownerId, String id) {
+        return events.findByIdAndOwnerId(id, ownerId)
+                .map(e -> EventResponse.of(e, clock.instant()))
+                .orElseThrow(EventNotFoundException::new);
     }
 
     /**

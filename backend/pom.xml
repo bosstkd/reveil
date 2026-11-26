@@ -20,6 +20,7 @@
     <java.version>17</java.version>
     <jjwt.version>0.13.0</jjwt.version>
     <flapdoodle.version>4.33.0</flapdoodle.version>
+    <google-auth.version>1.58.0</google-auth.version>
   </properties>
 
   <dependencies>
@@ -59,6 +60,12 @@
       <artifactId>jjwt-jackson</artifactId>
       <version>${jjwt.version}</version>
       <scope>runtime</scope>
+    </dependency>
+    <!-- Jeton OAuth2 du compte de service Firebase (FCM HTTP v1). -->
+    <dependency>
+      <groupId>com.google.auth</groupId>
+      <artifactId>google-auth-library-oauth2-http</artifactId>
+      <version>${google-auth.version}</version>
     </dependency>
 
     <dependency>

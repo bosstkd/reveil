@@ -23,6 +23,10 @@ services:
       # Secret de signature des jetons : à fournir par l'environnement (>= 32 octets).
       # Vide => clé éphémère générée au démarrage (sessions perdues au redémarrage).
       REVEIL_JWT_SECRET: ${REVEIL_JWT_SECRET:-}
+      # Notifications push (FCM HTTP v1) : identifiant du projet Firebase et contenu JSON du compte de service,
+      # fournis par l'environnement. Vides => les rappels sont planifiés normalement mais seulement journalisés.
+      REVEIL_FCM_PROJECT_ID: ${REVEIL_FCM_PROJECT_ID:-}
+      REVEIL_FCM_CREDENTIALS_JSON: ${REVEIL_FCM_CREDENTIALS_JSON:-}
     expose:
       - "8081"
     depends_on:
