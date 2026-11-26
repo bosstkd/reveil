@@ -1,14 +1,26 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/auth/auth.service';
-import { EventPeriod, ReveilEvent, eventDate, eventTime, timeUntil } from '../../../core/events/event.models';
+import { HttpErrorResponse } from '@angular/common/http';
+import {
+  EVENT_FORBIDDEN,
+  EVENT_GONE,
+  EventPeriod,
+  ReveilEvent,
+  eventDate,
+  eventTime,
+  timeUntil,
+} from '../../../core/events/event.models';
 import { EventService } from '../../../core/events/event.service';
 import { EventForm } from '../event-form/event-form';
 
 /** Rafraîchissement du temps restant affiché. */
 const CLOCK_TICK_MS = 60_000;
 
-/** Liste des événements de l'utilisateur (onglets « À venir » / « Passés »), avec création en place. */
+/**
+ * Liste des événements de l'utilisateur (onglets « À venir » / « Passés »), avec création, modification
+ * et suppression (après confirmation) en place.
+ */
 @Component({
   selector: 'app-event-list',
   imports: [EventForm],
@@ -26,6 +38,12 @@ export class EventList implements OnInit, OnDestroy {
   protected readonly notice = signal<string | null>(null);
   protected readonly period = signal<EventPeriod>('upcoming');
   protected readonly now = signal(new Date());
+  /** Événement en cours de modification. */
+  protected readonly editingId = signal<string | null>(null);
+  /** Événement dont la suppression attend confirmation. */
+  protected readonly confirmingId = signal<string | null>(null);
+  protected readonly deleting = signal(false);
+  protected readonly actionError = signal<string | null>(null);
 
   protected readonly current = computed(() => (this.period() === 'upcoming' ? this.events.upcoming() : this.events.past()));
   /** Liste chargée et vide : état vide de l'onglet. */
@@ -69,7 +87,63 @@ export class EventList implements OnInit, OnDestroy {
 
   protected startCreating(): void {
     this.notice.set(null);
+    this.actionError.set(null);
+    this.editingId.set(null);
+    this.confirmingId.set(null);
     this.creating.set(true);
+  }
+
+  protected startEditing(event: ReveilEvent): void {
+    this.notice.set(null);
+    this.actionError.set(null);
+    this.creating.set(false);
+    this.confirmingId.set(null);
+    this.editingId.set(event.id);
+  }
+
+  /** L'événement est déjà replacé dans le bon onglet par EventService. */
+  protected onUpdated(event: ReveilEvent): void {
+    this.editingId.set(null);
+    this.now.set(new Date());
+    this.notice.set(event.warnings.length ? event.warnings.join(' · ') : 'Événement modifié.');
+  }
+
+  protected onGone(): void {
+    this.editingId.set(null);
+    this.actionError.set(EVENT_GONE);
+  }
+
+  protected askDelete(event: ReveilEvent): void {
+    this.notice.set(null);
+    this.actionError.set(null);
+    this.editingId.set(null);
+    this.confirmingId.set(event.id);
+  }
+
+  protected confirmDelete(event: ReveilEvent): void {
+    if (this.deleting()) {
+      return;
+    }
+    this.deleting.set(true);
+    this.events.remove(event.id).subscribe({
+      next: () => {
+        this.deleting.set(false);
+        this.confirmingId.set(null);
+        this.notice.set(`« ${event.title} » a été supprimé, ainsi que ses rappels.`);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.deleting.set(false);
+        this.confirmingId.set(null);
+        if (err.status === 404) {
+          this.events.forget(event.id);
+          this.actionError.set(EVENT_GONE);
+        } else {
+          this.actionError.set(
+            err.status === 403 ? EVENT_FORBIDDEN : "La suppression a échoué. Réessayez dans un instant.",
+          );
+        }
+      },
+    });
   }
 
   protected logout(): void {

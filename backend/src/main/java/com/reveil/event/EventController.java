@@ -4,9 +4,11 @@ import com.reveil.auth.AuthenticatedUser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -57,5 +59,19 @@ public class EventController {
     @GetMapping("/{id}")
     public EventResponse get(@PathVariable String id, @AuthenticationPrincipal AuthenticatedUser current) {
         return eventService.get(current.id(), id);
+    }
+
+    /** {@code PUT /api/events/{id}} : modification complète (403 si l'événement est à un autre utilisateur). */
+    @PutMapping("/{id}")
+    public EventResponse update(@PathVariable String id, @Valid @RequestBody CreateEventRequest request,
+                                @AuthenticationPrincipal AuthenticatedUser current) {
+        return eventService.update(current.id(), id, request);
+    }
+
+    /** {@code DELETE /api/events/{id}} : suppression avec rappel et photos (403 si à un autre utilisateur). */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable String id, @AuthenticationPrincipal AuthenticatedUser current) {
+        eventService.delete(current.id(), id);
     }
 }

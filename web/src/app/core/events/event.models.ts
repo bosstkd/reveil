@@ -39,9 +39,13 @@ export interface CreateEventPayload {
   location: string | null;
 }
 
+/** Modification (PUT /api/events/{id}) : toutes les informations saisies à la création. */
+export type UpdateEventPayload = CreateEventPayload;
+
 export const TITLE_MAX_LENGTH = 200;
 export const LOCATION_MAX_LENGTH = 300;
 export const PAST_DATE_WARNING = "Cette date est déjà passée : l'événement sera tout de même créé.";
+export const PAST_DATE_WARNING_EDIT = "Cette date est déjà passée : la modification sera tout de même enregistrée.";
 
 /** Fuseau IANA du navigateur (ex. « Europe/Paris »), UTC à défaut. */
 export function userTimeZone(): string {
@@ -60,6 +64,11 @@ export function isPast(date: string, time: string, now: Date = new Date()): bool
   const local = new Date(`${date}T${time}`);
   return !Number.isNaN(local.getTime()) && local.getTime() < now.getTime();
 }
+
+/** Message affiché quand l'événement visé a été supprimé entre-temps (404). */
+export const EVENT_GONE = "Cet événement n'existe plus.";
+/** Message affiché quand l'événement appartient à un autre utilisateur (403). */
+export const EVENT_FORBIDDEN = "Vous n'êtes pas autorisé à modifier cet événement.";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

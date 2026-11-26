@@ -3,11 +3,14 @@ package com.reveil.event;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -180,5 +183,81 @@ class EventControllerTest {
     @Test
     void getRequiresAuthentication() throws Exception {
         mvc.perform(get("/api/events/e1")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void updateReturns200WithTheUpdatedEvent() throws Exception {
+        when(eventService.update(eq("u1"), eq("e1"), any())).thenReturn(response(false));
+
+        mvc.perform(put("/api/events/e1").header("Authorization", "Bearer good")
+                        .contentType(MediaType.APPLICATION_JSON).content(VALID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("e1"))
+                .andExpect(jsonPath("$.startsAt").value("2026-12-24T19:30:00Z"));
+        verify(eventService).update(eq("u1"), eq("e1"),
+                eq(new CreateEventRequest("Concert", java.time.LocalDate.of(2026, 12, 24),
+                        java.time.LocalTime.of(20, 30), "Europe/Paris", null)));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "{\"date\":\"2026-12-24\",\"time\":\"20:30\",\"timeZone\":\"UTC\"}|title",
+            "{\"title\":\"A\",\"time\":\"20:30\",\"timeZone\":\"UTC\"}|date",
+            "{\"title\":\"A\",\"date\":\"2026-12-24\",\"timeZone\":\"UTC\"}|time",
+            "{\"title\":\"A\",\"date\":\"2026-12-24\",\"time\":\"20:30\",\"timeZone\":\"Mars/Base\"}|timeZone",
+    })
+    void updateIsValidatedLikeCreation(String body, String field) throws Exception {
+        mvc.perform(put("/api/events/e1").header("Authorization", "Bearer good")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value(field));
+        verify(eventService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void updateOfAnotherUsersEventReturns403() throws Exception {
+        when(eventService.update(eq("u1"), eq("e2"), any())).thenThrow(new EventAccessDeniedException());
+        mvc.perform(put("/api/events/e2").header("Authorization", "Bearer good")
+                        .contentType(MediaType.APPLICATION_JSON).content(VALID))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Vous n'êtes pas autorisé à modifier cet événement"));
+    }
+
+    @Test
+    void updateOfAnUnknownEventReturns404() throws Exception {
+        when(eventService.update(eq("u1"), eq("gone"), any())).thenThrow(new EventNotFoundException());
+        mvc.perform(put("/api/events/gone").header("Authorization", "Bearer good")
+                        .contentType(MediaType.APPLICATION_JSON).content(VALID))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deleteReturns204() throws Exception {
+        mvc.perform(delete("/api/events/e1").header("Authorization", "Bearer good"))
+                .andExpect(status().isNoContent());
+        verify(eventService).delete("u1", "e1");
+    }
+
+    @Test
+    void deleteOfAnotherUsersEventReturns403() throws Exception {
+        doThrow(new EventAccessDeniedException()).when(eventService).delete("u1", "e2");
+        mvc.perform(delete("/api/events/e2").header("Authorization", "Bearer good"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteOfAnUnknownEventReturns404() throws Exception {
+        doThrow(new EventNotFoundException()).when(eventService).delete("u1", "gone");
+        mvc.perform(delete("/api/events/gone").header("Authorization", "Bearer good"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void updateAndDeleteRequireAuthentication() throws Exception {
+        mvc.perform(put("/api/events/e1").contentType(MediaType.APPLICATION_JSON).content(VALID))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(delete("/api/events/e1")).andExpect(status().isUnauthorized());
+        verify(eventService, never()).update(any(), any(), any());
+        verify(eventService, never()).delete(any(), any());
     }
 }

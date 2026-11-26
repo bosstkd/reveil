@@ -11,4 +11,6 @@ public interface PhotoRepository extends MongoRepository<Photo, String> {
     List<Photo> findByEventIdAndOwnerIdOrderByCreatedAtDesc(String eventId, String ownerId);
 
     Optional<Photo> findByIdAndEventIdAndOwnerId(String id, String eventId, String ownerId);
+
+    long deleteByEventId(String eventId);
 }

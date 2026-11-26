@@ -7,6 +7,7 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -153,12 +154,72 @@ class ReminderIntegrationTest {
         registerDevice(bearer(alice), "alice-phone");
         String id = createEvent(bearer(alice), "Annulé", Duration.ofMinutes(30));
 
-        events.deleteById(id); // suppression (story dédiée) : le rappel disparaît avec le document
+        mvc.perform(delete("/api/events/" + id).header("Authorization", bearer(alice)))
+                .andExpect(status().isNoContent()); // le rappel disparaît avec le document
 
         assertThat(reminders.sendDueReminders()).isZero();
         verify(push, never()).send(any());
         mvc.perform(get("/api/events/" + id).header("Authorization", bearer(alice)))
                 .andExpect(status().isNotFound());
+    }
+
+    /** Déplace l'événement {@code id} pour qu'il commence dans {@code in} (heure UTC, à la minute). */
+    private void moveEvent(String bearer, String id, String title, Duration in) throws Exception {
+        LocalDateTime at = LocalDateTime.ofInstant(Instant.now().plus(in), ZoneOffset.UTC).truncatedTo(ChronoUnit.MINUTES);
+        mvc.perform(put("/api/events/" + id).header("Authorization", bearer).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"" + title + "\",\"date\":\"" + at.toLocalDate() + "\",\"time\":\""
+                                + at.toLocalTime() + "\",\"timeZone\":\"UTC\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void changingTheDateRecomputesTheReminderOnTheNewDate() throws Exception {
+        JsonNode alice = register("alice@example.com");
+        registerDevice(bearer(alice), "alice-phone");
+        String id = createEvent(bearer(alice), "Concert", Duration.ofMinutes(30)); // rappel déjà échu
+
+        moveEvent(bearer(alice), id, "Concert", Duration.ofDays(2));
+
+        Event moved = events.findById(id).orElseThrow();
+        assertThat(moved.getReminderDueAt()).isEqualTo(moved.getStartsAt().minus(Duration.ofHours(1)));
+        assertThat(reminders.sendDueReminders()).isZero(); // l'ancienne échéance ne part plus
+        verify(push, never()).send(any());
+
+        // Ramené dans la demi-heure : nouveau rappel immédiatement dû, envoyé une fois.
+        moveEvent(bearer(alice), id, "Concert avancé", Duration.ofMinutes(20));
+        assertThat(reminders.sendDueReminders()).isEqualTo(1);
+        ArgumentCaptor<PushMessage> sent = ArgumentCaptor.forClass(PushMessage.class);
+        verify(push).send(sent.capture());
+        assertThat(sent.getValue().title()).isEqualTo("Rappel : Concert avancé");
+    }
+
+    @Test
+    void alreadySentReminderIsRescheduledWhenTheDateChangesButNotOnOtherChanges() throws Exception {
+        JsonNode alice = register("alice@example.com");
+        registerDevice(bearer(alice), "alice-phone");
+        String id = createEvent(bearer(alice), "Concert", Duration.ofMinutes(30));
+        assertThat(reminders.sendDueReminders()).isEqualTo(1);
+
+        // Titre modifié, même date : pas de second rappel.
+        Event sent = events.findById(id).orElseThrow();
+        LocalDateTime same = LocalDateTime.ofInstant(sent.getStartsAt(), ZoneOffset.UTC);
+        mvc.perform(put("/api/events/" + id).header("Authorization", bearer(alice)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Concert (salle B)\",\"date\":\"" + same.toLocalDate() + "\",\"time\":\""
+                                + same.toLocalTime() + "\",\"timeZone\":\"UTC\"}"))
+                .andExpect(status().isOk());
+        assertThat(events.findById(id).orElseThrow().getReminderDueAt()).isNull();
+        assertThat(reminders.sendDueReminders()).isZero();
+
+        // Date reportée : un nouveau rappel est programmé.
+        moveEvent(bearer(alice), id, "Concert", Duration.ofDays(1));
+        Event moved = events.findById(id).orElseThrow();
+        assertThat(moved.getReminderDueAt()).isEqualTo(moved.getStartsAt().minus(Duration.ofHours(1)));
+        assertThat(moved.getReminderSentAt()).isNull();
+
+        // Déplacé dans le passé : plus aucun rappel.
+        moveEvent(bearer(alice), id, "Concert", Duration.ofDays(-1));
+        assertThat(events.findById(id).orElseThrow().getReminderDueAt()).isNull();
+        verify(push, times(1)).send(any());
     }
 
     @Test

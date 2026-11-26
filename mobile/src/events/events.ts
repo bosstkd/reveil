@@ -39,9 +39,13 @@ export interface CreateEventPayload {
   location: string | null;
 }
 
+/** Modification (PUT /api/events/{id}) : toutes les informations saisies à la création. */
+export type UpdateEventPayload = CreateEventPayload;
+
 export const TITLE_MAX_LENGTH = 200;
 export const LOCATION_MAX_LENGTH = 300;
 export const PAST_DATE_WARNING = "Cette date est déjà passée : l'événement sera tout de même créé.";
+export const PAST_DATE_WARNING_EDIT = "Cette date est déjà passée : la modification sera tout de même enregistrée.";
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -62,6 +66,15 @@ export function formatDate(d: Date): string {
 /** Heure locale de l'appareil au format HH:mm. */
 export function formatTime(d: Date): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Date et heure saisies d'un événement (`localDateTime`, ex. 2099-12-24T20:30:00) en valeurs pour les
+ * sélecteurs : les composantes sont reprises telles quelles (pas de conversion de fuseau).
+ */
+export function parseLocalDateTime(localDateTime: string): { date: Date; time: Date } {
+  const [y, mo, d, h, mi] = localDateTime.split(/[-T:]/).map(Number);
+  return { date: new Date(y, mo - 1, d), time: new Date(y, mo - 1, d, h, mi) };
 }
 
 /** Combine le jour de `date` et l'heure de `time` (heure locale de l'appareil). */

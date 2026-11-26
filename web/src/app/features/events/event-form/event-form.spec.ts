@@ -100,4 +100,81 @@ describe('EventForm', () => {
     expect(q('event-error')!.textContent).toContain('Le fuseau horaire est inconnu');
     expect(q<HTMLButtonElement>('event-submit')!.disabled).toBe(false);
   });
+
+  describe('en modification', () => {
+    const concert = {
+      id: 'e1',
+      title: 'Concert',
+      startsAt: '2099-12-24T19:30:00Z',
+      localDateTime: '2099-12-24T20:30:00',
+      timeZone: 'America/New_York',
+      location: 'Olympia',
+      past: false,
+      warnings: [],
+    };
+
+    beforeEach(() => {
+      fixture = TestBed.createComponent(EventForm);
+      fixture.componentRef.setInput('event', concert);
+      el = fixture.nativeElement;
+      fixture.detectChanges();
+    });
+
+    it('pré-remplit toutes les informations saisies, dans le fuseau de l’événement', () => {
+      expect(el.querySelector('h2')!.textContent).toContain("Modifier l'événement");
+      expect(q<HTMLInputElement>('event-title')!.value).toBe('Concert');
+      expect(q<HTMLInputElement>('event-date')!.value).toBe('2099-12-24');
+      expect(q<HTMLInputElement>('event-time')!.value).toBe('20:30');
+      expect(q<HTMLInputElement>('event-location')!.value).toBe('Olympia');
+      expect(q('event-timezone')!.textContent).toContain('America/New_York');
+      expect(q('event-submit')!.textContent).toContain('Enregistrer');
+    });
+
+    it('envoie un PUT avec toutes les informations modifiées', () => {
+      const updated = vi.fn();
+      fixture.componentInstance.updated.subscribe(updated);
+      type('event-title', 'Concert reporté');
+      type('event-date', '2099-12-31');
+      type('event-time', '22:00');
+      type('event-location', '');
+      q('event-submit')!.click();
+
+      const req = http.expectOne({ method: 'PUT', url: 'api/events/e1' });
+      expect(req.request.body).toEqual({
+        title: 'Concert reporté',
+        date: '2099-12-31',
+        time: '22:00',
+        timeZone: 'America/New_York',
+        location: null,
+      });
+      req.flush({ ...concert, title: 'Concert reporté' });
+      expect(updated).toHaveBeenCalledWith(expect.objectContaining({ title: 'Concert reporté' }));
+    });
+
+    it('bloque l’enregistrement si un champ obligatoire est vidé', () => {
+      type('event-title', '');
+      q('event-submit')!.click();
+      fixture.detectChanges();
+      expect(q('title-error')).not.toBeNull();
+      http.expectNone('api/events/e1');
+    });
+
+    it('signale un refus (403) et un événement disparu (404)', () => {
+      const gone = vi.fn();
+      fixture.componentInstance.gone.subscribe(gone);
+      q('event-submit')!.click();
+      http.expectOne('api/events/e1').flush({ message: 'Accès refusé', errors: [] }, { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
+      expect(q('event-error')!.textContent).toContain("Vous n'êtes pas autorisé");
+
+      q('event-submit')!.click();
+      http.expectOne('api/events/e1').flush({ message: 'Événement introuvable', errors: [] }, { status: 404, statusText: 'Not Found' });
+      expect(gone).toHaveBeenCalledWith('e1');
+    });
+
+    it('avertit (sans bloquer) si la nouvelle date est passée', () => {
+      type('event-date', '2001-01-01');
+      expect(q('past-warning')!.textContent).toContain('modification sera tout de même enregistrée');
+    });
+  });
 });

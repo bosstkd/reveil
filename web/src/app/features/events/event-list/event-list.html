@@ -14,6 +14,9 @@
   @if (notice(); as message) {
     <p class="notice" role="status" data-testid="created-notice">{{ message }}</p>
   }
+  @if (actionError(); as message) {
+    <p class="error" role="alert" data-testid="action-error">{{ message }}</p>
+  }
 
   <nav class="tabs" role="tablist">
     <button type="button" role="tab" [attr.aria-selected]="period() === 'upcoming'" [class.active]="period() === 'upcoming'"
@@ -47,14 +50,39 @@
     <ul data-testid="event-list">
       @for (event of current().items; track event.id) {
         <li [class.past]="event.past" data-testid="event-item">
-          <strong data-testid="item-title">{{ event.title }}</strong>
-          <span class="when">
-            <span data-testid="item-date">{{ date(event) }}</span> à
-            <span data-testid="item-time">{{ time(event) }}</span>
-          </span>
-          <span class="remaining" data-testid="item-remaining">{{ remaining(event) }}</span>
-          @if (event.location) {
-            <span class="where">{{ event.location }}</span>
+          @if (editingId() === event.id) {
+            <app-event-form [event]="event" (updated)="onUpdated($event)" (gone)="onGone()"
+                            (cancelled)="editingId.set(null)" />
+          } @else {
+            <strong data-testid="item-title">{{ event.title }}</strong>
+            <span class="when">
+              <span data-testid="item-date">{{ date(event) }}</span> à
+              <span data-testid="item-time">{{ time(event) }}</span>
+            </span>
+            <span class="remaining" data-testid="item-remaining">{{ remaining(event) }}</span>
+            @if (event.location) {
+              <span class="where">{{ event.location }}</span>
+            }
+            @if (confirmingId() === event.id) {
+              <div class="confirm" role="alertdialog" aria-label="Confirmer la suppression" data-testid="delete-confirm">
+                <p>Supprimer « {{ event.title }} » ? Ses rappels programmés seront aussi supprimés.</p>
+                <div class="item-actions">
+                  <button type="button" (click)="confirmingId.set(null)" [disabled]="deleting()"
+                          data-testid="delete-cancel">Annuler</button>
+                  <button type="button" class="danger" (click)="confirmDelete(event)" [disabled]="deleting()"
+                          data-testid="delete-confirm-button">
+                    {{ deleting() ? 'Suppression…' : 'Supprimer' }}
+                  </button>
+                </div>
+              </div>
+            } @else {
+              <div class="item-actions">
+                <button type="button" (click)="startEditing(event)" data-testid="item-edit">Modifier</button>
+                <button type="button" class="danger-outline" (click)="askDelete(event)" data-testid="item-delete">
+                  Supprimer
+                </button>
+              </div>
+            }
           }
         </li>
       }

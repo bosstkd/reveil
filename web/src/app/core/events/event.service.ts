@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
-import { CreateEventPayload, EventPage, EventPeriod, PAGE_SIZE, ReveilEvent } from './event.models';
+import { CreateEventPayload, EventPage, EventPeriod, PAGE_SIZE, ReveilEvent, UpdateEventPayload } from './event.models';
 
 /** Une liste paginée (un onglet). */
 interface Tab {
@@ -44,7 +44,7 @@ export class EventService {
     const params = new HttpParams().set('when', period).set('page', page).set('size', PAGE_SIZE);
     return this.http.get<EventPage>('api/events', { params }).pipe(
       tap((res) =>
-        this.update(period, (tab) => ({
+        this.patchTab(period, (tab) => ({
           items: merge(period, more ? tab.items : [], res.items),
           page: res.page,
           hasNext: res.hasNext,
@@ -59,7 +59,7 @@ export class EventService {
     return this.http.post<ReveilEvent>('api/events', payload).pipe(
       tap((created) => {
         const period: EventPeriod = created.past ? 'past' : 'upcoming';
-        this.update(period, (tab) => {
+        this.patchTab(period, (tab) => {
           const isNew = !tab.items.some((e) => e.id === created.id);
           return { ...tab, items: merge(period, tab.items, [created]), total: tab.total + (isNew ? 1 : 0) };
         });
@@ -67,11 +67,41 @@ export class EventService {
     );
   }
 
+  /**
+   * Modifie l'événement (PUT) et le replace aussitôt dans le bon onglet : un changement de date peut le faire
+   * passer de « À venir » à « Passés » (ou l'inverse).
+   */
+  update(id: string, payload: UpdateEventPayload): Observable<ReveilEvent> {
+    return this.http.put<ReveilEvent>(`api/events/${encodeURIComponent(id)}`, payload).pipe(
+      tap((updated) => {
+        this.forget(id);
+        const period: EventPeriod = updated.past ? 'past' : 'upcoming';
+        this.patchTab(period, (tab) => ({ ...tab, items: merge(period, tab.items, [updated]), total: tab.total + 1 }));
+      }),
+    );
+  }
+
+  /** Supprime l'événement (DELETE) ; ses rappels sont supprimés côté serveur. Retiré aussitôt de la liste. */
+  remove(id: string): Observable<void> {
+    return this.http.delete<void>(`api/events/${encodeURIComponent(id)}`).pipe(tap(() => this.forget(id)));
+  }
+
+  /** Retire l'événement des onglets (supprimé, ou disparu côté serveur). */
+  forget(id: string): void {
+    for (const period of ['upcoming', 'past'] as const) {
+      this.patchTab(period, (tab) =>
+        tab.items.some((e) => e.id === id)
+          ? { ...tab, items: tab.items.filter((e) => e.id !== id), total: Math.max(0, tab.total - 1) }
+          : tab,
+      );
+    }
+  }
+
   clear(): void {
     this.tabs.set({ upcoming: EMPTY, past: EMPTY });
   }
 
-  private update(period: EventPeriod, fn: (tab: Tab) => Tab): void {
+  private patchTab(period: EventPeriod, fn: (tab: Tab) => Tab): void {
     this.tabs.update((tabs) => ({ ...tabs, [period]: fn(tabs[period]) }));
   }
 }

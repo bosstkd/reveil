@@ -1,22 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { API_URL } from '../config';
 import { ReveilEvent, eventDate, eventTime, timeUntil } from '../events/events';
-import { getEvent } from '../events/eventsApi';
+import { EVENT_NOT_FOUND, deleteEvent, getEvent } from '../events/eventsApi';
 import { compressPhoto, ensureCameraPermission, takePhoto } from '../photos/camera';
 import type { EventPhoto, PreparedPhoto } from '../photos/photos';
 import { listPhotos, uploadPhoto } from '../photos/photosApi';
+import { EventForm } from './EventForm';
 
 export const CAMERA_DENIED = "L'accès à l'appareil photo est nécessaire pour prendre une photo.";
 export const CAMERA_BLOCKED = "L'accès à l'appareil photo a été refusé. Autorisez-le dans les réglages de l'appareil.";
 export const PREPARE_FAILED = 'Impossible de préparer la photo. Réessayez.';
+export const DELETE_TITLE = "Supprimer l'événement ?";
+export const DELETE_MESSAGE = 'Ses rappels programmés et ses photos seront aussi supprimés. Cette action est définitive.';
 
 type Busy = 'idle' | 'camera' | 'preparing' | 'uploading';
 
 /**
  * Détail d'un événement (depuis la liste, une notification de rappel ou un lien reveil://events/<id>),
- * avec sa galerie et la prise de photo.
+ * avec sa galerie, la prise de photo, la modification et la suppression (après confirmation).
+ * Après suppression, l'écran se ferme (`onBack`) : la liste, remontée, est rechargée.
  */
 export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack: () => void }) {
   const { authFetch, session } = useAuth();
@@ -29,6 +33,10 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
   const [uploadError, setUploadError] = useState<string | null>(null);
   /** Photo compressée dont l'envoi a échoué : renvoyée telle quelle par « Réessayer ». */
   const [pending, setPending] = useState<PreparedPhoto | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -107,6 +115,30 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
     }
   }
 
+  function confirmDelete() {
+    setActionError(null);
+    setNotice(null);
+    Alert.alert(DELETE_TITLE, DELETE_MESSAGE, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: () => void remove() },
+    ]);
+  }
+
+  async function remove() {
+    setDeleting(true);
+    try {
+      await deleteEvent(authFetch, eventId);
+      if (mounted.current) onBack();
+    } catch (e) {
+      if (!mounted.current) return;
+      setDeleting(false);
+      const err = e as Error;
+      // Déjà supprimé ailleurs : l'écran n'a plus d'objet.
+      if (err.message === EVENT_NOT_FOUND) setError(EVENT_NOT_FOUND);
+      else setActionError(err.message);
+    }
+  }
+
   const imageHeaders = session ? { Authorization: `Bearer ${session.token}` } : undefined;
 
   return (
@@ -120,6 +152,16 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
         </Text>
       ) : !event ? (
         <ActivityIndicator testID="detail-loading" />
+      ) : editing ? (
+        <EventForm
+          event={event}
+          onCancel={() => setEditing(false)}
+          onUpdated={(updated) => {
+            setEvent(updated);
+            setEditing(false);
+            setNotice(updated.warnings?.length ? updated.warnings.join('\n') : 'Événement modifié.');
+          }}
+        />
       ) : (
         <View testID="event-detail">
           <Text testID="detail-title" style={styles.title} accessibilityRole="header">
@@ -134,6 +176,42 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
           {event.location ? (
             <Text testID="detail-location" style={styles.meta}>
               {event.location}
+            </Text>
+          ) : null}
+
+          <View style={styles.actions}>
+            <Pressable
+              testID="detail-edit"
+              accessibilityRole="button"
+              disabled={deleting}
+              onPress={() => {
+                setNotice(null);
+                setActionError(null);
+                setEditing(true);
+              }}
+              style={styles.outline}
+            >
+              <Text style={styles.outlineText}>Modifier</Text>
+            </Pressable>
+            <Pressable
+              testID="detail-delete"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: deleting }}
+              disabled={deleting}
+              onPress={confirmDelete}
+              style={[styles.danger, deleting && styles.disabled]}
+            >
+              {deleting ? <ActivityIndicator color="#c92a2a" /> : <Text style={styles.dangerText}>Supprimer</Text>}
+            </Pressable>
+          </View>
+          {notice ? (
+            <Text testID="detail-notice" accessibilityRole="alert" style={styles.noticeBox}>
+              {notice}
+            </Text>
+          ) : null}
+          {actionError ? (
+            <Text testID="detail-action-error" accessibilityRole="alert" style={styles.error}>
+              {actionError}
             </Text>
           ) : null}
 
@@ -223,6 +301,10 @@ const styles = StyleSheet.create({
   badge: { alignSelf: 'flex-start', marginVertical: 6, paddingHorizontal: 6, backgroundColor: '#edf2ff', color: '#3b5bdb', borderRadius: 4 },
   error: { color: '#c92a2a', marginVertical: 8 },
   section: { marginTop: 24 },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  danger: { borderWidth: 1, borderColor: '#c92a2a', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, alignItems: 'center' },
+  dangerText: { color: '#c92a2a' },
+  noticeBox: { marginTop: 8, padding: 8, borderRadius: 6, backgroundColor: '#fff3bf', color: '#8a6100' },
   sectionTitle: { fontSize: 20, fontWeight: '600' },
   primary: { backgroundColor: '#3b5bdb', borderRadius: 8, padding: 12, alignItems: 'center', marginVertical: 12 },
   primaryText: { color: '#fff', fontWeight: '600' },

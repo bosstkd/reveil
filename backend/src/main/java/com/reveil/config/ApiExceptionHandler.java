@@ -2,6 +2,7 @@ package com.reveil.config;
 
 import com.reveil.auth.EmailAlreadyUsedException;
 import com.reveil.auth.InvalidCredentialsException;
+import com.reveil.event.EventAccessDeniedException;
 import com.reveil.event.EventNotFoundException;
 import com.reveil.event.InvalidListQueryException;
 import com.reveil.photo.InvalidPhotoException;
@@ -51,6 +52,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(EventNotFoundException.class)
     public ResponseEntity<Map<String, Object>> eventNotFound(EventNotFoundException e) {
         return body(HttpStatus.NOT_FOUND, e.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(EventAccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> eventAccessDenied(EventAccessDeniedException e) {
+        return body(HttpStatus.FORBIDDEN, e.getMessage(), List.of());
     }
 
     @ExceptionHandler(PhotoNotFoundException.class)

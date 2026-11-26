@@ -217,4 +217,115 @@ describe('EventList', () => {
     expect(localStorage.getItem('reveil.session')).toBeNull();
     expect(navigate).toHaveBeenCalledWith('/connexion');
   });
+
+  describe('modification et suppression', () => {
+    const items = () => Array.from(el.querySelectorAll<HTMLElement>('[data-testid="event-item"]'));
+    const within = (item: HTMLElement, id: string) => item.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
+
+    beforeEach(() => {
+      list('upcoming').flush(
+        page('upcoming', [
+          event({ id: 'a', title: 'Concert' }),
+          event({ id: 'b', title: 'Cinéma', startsAt: '2099-12-25T19:30:00Z', localDateTime: '2099-12-25T20:30:00' }),
+        ]),
+      );
+      render();
+    });
+
+    it('modifie un événement en place et le replace dans la liste', () => {
+      within(items()[0], 'item-edit').click();
+      render();
+      expect(q<HTMLInputElement>('event-title')!.value).toBe('Concert');
+      expect(q<HTMLInputElement>('event-date')!.value).toBe('2099-12-24');
+
+      type('event-title', 'Concert reporté');
+      type('event-date', '2099-12-26');
+      render();
+      q('event-submit')!.click();
+      const req = http.expectOne({ method: 'PUT', url: 'api/events/a' });
+      expect(req.request.body).toEqual(
+        expect.objectContaining({ title: 'Concert reporté', date: '2099-12-26', time: '20:30', timeZone: 'Europe/Paris' }),
+      );
+      req.flush(event({ id: 'a', title: 'Concert reporté', startsAt: '2099-12-26T19:30:00Z', localDateTime: '2099-12-26T20:30:00' }));
+      render();
+
+      expect(q('event-form')).toBeNull();
+      expect(all('item-title')).toEqual(['Cinéma', 'Concert reporté']); // re-trié sur la nouvelle date
+      expect(q('tab-upcoming')!.textContent).toContain('(2)');
+      expect(q('created-notice')!.textContent).toContain('Événement modifié');
+    });
+
+    it('un événement déplacé dans le passé quitte l’onglet « À venir »', () => {
+      within(items()[0], 'item-edit').click();
+      render();
+      type('event-date', '2001-01-01');
+      render();
+      q('event-submit')!.click();
+      http
+        .expectOne({ method: 'PUT', url: 'api/events/a' })
+        .flush(event({ id: 'a', startsAt: '2001-01-01T19:30:00Z', past: true, warnings: ['La date de cet événement est déjà passée'] }));
+      render();
+      expect(all('item-title')).toEqual(['Cinéma']);
+      expect(q('tab-upcoming')!.textContent).toContain('(1)');
+      expect(q('created-notice')!.textContent).toContain('déjà passée');
+    });
+
+    it('annuler la modification ne change rien', () => {
+      within(items()[0], 'item-edit').click();
+      render();
+      q('event-cancel')!.click();
+      render();
+      expect(q('event-form')).toBeNull();
+      expect(all('item-title')).toEqual(['Concert', 'Cinéma']);
+    });
+
+    it('demande une confirmation avant de supprimer', () => {
+      within(items()[0], 'item-delete').click();
+      render();
+      expect(q('delete-confirm')!.textContent).toContain('Supprimer « Concert » ?');
+      expect(q('delete-confirm')!.textContent).toContain('rappels');
+      http.expectNone({ method: 'DELETE' });
+
+      q('delete-cancel')!.click();
+      render();
+      expect(q('delete-confirm')).toBeNull();
+      expect(all('item-title')).toEqual(['Concert', 'Cinéma']);
+      http.expectNone({ method: 'DELETE' });
+    });
+
+    it('supprime l’événement après confirmation', () => {
+      within(items()[0], 'item-delete').click();
+      render();
+      q('delete-confirm-button')!.click();
+      http.expectOne({ method: 'DELETE', url: 'api/events/a' }).flush(null, { status: 204, statusText: 'No Content' });
+      render();
+      expect(all('item-title')).toEqual(['Cinéma']);
+      expect(q('tab-upcoming')!.textContent).toContain('(1)');
+      expect(q('created-notice')!.textContent).toContain('« Concert » a été supprimé, ainsi que ses rappels');
+    });
+
+    it('affiche un refus (403) sans retirer l’événement', () => {
+      within(items()[0], 'item-delete').click();
+      render();
+      q('delete-confirm-button')!.click();
+      http
+        .expectOne({ method: 'DELETE', url: 'api/events/a' })
+        .flush({ message: 'Accès refusé', errors: [] }, { status: 403, statusText: 'Forbidden' });
+      render();
+      expect(q('action-error')!.textContent).toContain("Vous n'êtes pas autorisé");
+      expect(all('item-title')).toEqual(['Concert', 'Cinéma']);
+    });
+
+    it('retire un événement déjà supprimé ailleurs (404)', () => {
+      within(items()[1], 'item-delete').click();
+      render();
+      q('delete-confirm-button')!.click();
+      http
+        .expectOne({ method: 'DELETE', url: 'api/events/b' })
+        .flush({ message: 'Événement introuvable', errors: [] }, { status: 404, statusText: 'Not Found' });
+      render();
+      expect(q('action-error')!.textContent).toContain("Cet événement n'existe plus");
+      expect(all('item-title')).toEqual(['Concert']);
+    });
+  });
 });

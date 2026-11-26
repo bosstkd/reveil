@@ -149,6 +149,25 @@ sélecteur natif `@react-native-community/datetimepicker`). Le fuseau est celui 
 Détail d'un événement de l'utilisateur connecté (même format que la liste). `404 { "message": "Événement introuvable" }`
 s'il n'existe pas, a été supprimé ou appartient à un autre utilisateur.
 
+### `PUT /api/events/{id}` (protégé)
+
+Modification complète : même corps et mêmes validations que `POST /api/events` (titre, date, heure, fuseau, lieu).
+`200` + événement modifié (avertissement si la date est passée). Si l'instant de début change, le rappel est
+recalculé sur la nouvelle date (y compris s'il avait déjà été envoyé ; aucun rappel si la nouvelle date est passée) ;
+sinon il est conservé tel quel. Mise à jour atomique (`findAndModify`) n'écrivant que les champs modifiables.
+
+### `DELETE /api/events/{id}` (protégé)
+
+`204`. Supprime l'événement, son rappel programmé (porté par le document) et ses photos (métadonnées + fichiers
+GridFS, via l'événement applicatif `EventDeleted`).
+
+PUT et DELETE : `404` si l'événement n'existe pas, `403 { "message": "Vous n'êtes pas autorisé à modifier cet
+événement" }` s'il appartient à un autre utilisateur.
+
+Clients : web — boutons « Modifier » (formulaire en place, pré-rempli) et « Supprimer » (confirmation en place)
+sur chaque événement de la liste ; mobile — mêmes actions sur l'écran de détail (confirmation par `Alert`, retour à
+la liste après suppression). La date et l'heure sont modifiées dans le fuseau de saisie de l'événement.
+
 ## Rappels (notifications push)
 
 - **Rappel par défaut 1 h avant** (`reveil.reminders.lead-time`) : à la création, l'événement reçoit un champ
@@ -160,6 +179,7 @@ s'il n'existe pas, a été supprimé ou appartient à un autre utilisateur.
   par un `findAndModify` atomique : pas de double envoi, même avec plusieurs instances. Un rappel dont l'événement
   a déjà commencé (API arrêtée) est abandonné.
 - **Événement supprimé** : le rappel est porté par le document de l'événement ; il disparaît avec lui.
+- **Date modifiée** : `reminderDueAt` recalculé sur la nouvelle date et `reminderSentAt` effacé.
 - **Envoi** (`FcmPushSender`) : API FCM HTTP v1 ; Android en direct, iOS relayé par FCM vers APNs. Message
   « notification » (affiché par l'OS application fermée), priorité haute (Android `HIGH`, APNs `10`), expiration
   à l'heure de l'événement, données `{ type: "event-reminder", eventId, link: "reveil://events/<id>" }`.

@@ -5,14 +5,16 @@ import { useAuth } from '../auth/AuthContext';
 import {
   LOCATION_MAX_LENGTH,
   PAST_DATE_WARNING,
+  PAST_DATE_WARNING_EDIT,
   ReveilEvent,
   TITLE_MAX_LENGTH,
   deviceTimeZone,
   formatDate,
   formatTime,
   isPast,
+  parseLocalDateTime,
 } from '../events/events';
-import { EventError, createEvent } from '../events/eventsApi';
+import { EventError, createEvent, updateEvent } from '../events/eventsApi';
 
 type Picker = 'date' | 'time' | null;
 
@@ -22,18 +24,31 @@ interface Errors {
   time?: string;
 }
 
-/** Création d'un événement : titre, date et heure obligatoires (sélecteurs natifs), lieu facultatif. */
-export function EventForm({ onCreated, onCancel }: { onCreated: (e: ReveilEvent) => void; onCancel: () => void }) {
+interface Props {
+  /** Événement à modifier (absent : création). */
+  event?: ReveilEvent;
+  onCreated?: (e: ReveilEvent) => void;
+  onUpdated?: (e: ReveilEvent) => void;
+  onCancel: () => void;
+}
+
+/**
+ * Création — ou modification si `event` est fourni — d'un événement : titre, date et heure obligatoires
+ * (sélecteurs natifs), lieu facultatif.
+ */
+export function EventForm({ event: editing, onCreated, onUpdated, onCancel }: Props) {
   const { authFetch } = useAuth();
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState<Date | null>(null);
-  const [time, setTime] = useState<Date | null>(null);
-  const [location, setLocation] = useState('');
+  const initial = editing ? parseLocalDateTime(editing.localDateTime) : null;
+  const [title, setTitle] = useState(editing?.title ?? '');
+  const [date, setDate] = useState<Date | null>(initial?.date ?? null);
+  const [time, setTime] = useState<Date | null>(initial?.time ?? null);
+  const [location, setLocation] = useState(editing?.location ?? '');
   const [picker, setPicker] = useState<Picker>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const timeZone = deviceTimeZone();
+  // Modification : date/heure affichées et renvoyées dans le fuseau de saisie de l'événement.
+  const timeZone = editing?.timeZone ?? deviceTimeZone();
 
   function onPick(event: DateTimePickerEvent, value?: Date) {
     const which = picker;
@@ -60,17 +75,22 @@ export function EventForm({ onCreated, onCancel }: { onCreated: (e: ReveilEvent)
 
     setSubmitting(true);
     setServerError(null);
+    const payload = {
+      title: title.trim(),
+      date: formatDate(date),
+      time: formatTime(time),
+      timeZone,
+      location: location.trim() || null,
+    };
     try {
-      const created = await createEvent(authFetch, {
-        title: title.trim(),
-        date: formatDate(date),
-        time: formatTime(time),
-        timeZone,
-        location: location.trim() || null,
-      });
-      onCreated(created);
+      if (editing) {
+        onUpdated?.(await updateEvent(authFetch, editing.id, payload));
+      } else {
+        onCreated?.(await createEvent(authFetch, payload));
+      }
     } catch (e) {
-      setServerError(e instanceof EventError ? e.message : "La création de l'événement a échoué.");
+      const fallback = editing ? "La modification de l'événement a échoué." : "La création de l'événement a échoué.";
+      setServerError(e instanceof EventError ? e.message : fallback);
       setSubmitting(false);
     }
   }
@@ -78,7 +98,7 @@ export function EventForm({ onCreated, onCancel }: { onCreated: (e: ReveilEvent)
   return (
     <View testID="event-form" style={styles.form}>
       <Text style={styles.title} accessibilityRole="header">
-        Nouvel événement
+        {editing ? "Modifier l'événement" : 'Nouvel événement'}
       </Text>
 
       <Text style={styles.label}>Titre *</Text>
@@ -137,7 +157,7 @@ export function EventForm({ onCreated, onCancel }: { onCreated: (e: ReveilEvent)
 
       {isPast(date, time) ? (
         <Text testID="past-warning" accessibilityRole="alert" style={styles.warning}>
-          {PAST_DATE_WARNING}
+          {editing ? PAST_DATE_WARNING_EDIT : PAST_DATE_WARNING}
         </Text>
       ) : null}
 
@@ -167,7 +187,7 @@ export function EventForm({ onCreated, onCancel }: { onCreated: (e: ReveilEvent)
           onPress={submit}
           style={[styles.button, submitting && styles.buttonDisabled]}
         >
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer l'événement</Text>}
+          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{editing ? 'Enregistrer' : "Créer l'événement"}</Text>}
         </Pressable>
       </View>
     </View>

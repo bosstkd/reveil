@@ -1,6 +1,7 @@
 package com.reveil.photo;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -188,5 +189,26 @@ class PhotoIntegrationTest {
                 .andExpect(jsonPath("$.contentType").value("image/png"))
                 .andExpect(jsonPath("$.size").value(png.length));
         assertThat(Duration.between(start, Instant.now())).isLessThan(Duration.ofSeconds(3));
+    }
+
+    @Test
+    void deletingTheEventDeletesItsPhotosAndFilesOnly() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String deleted = createEvent(alice);
+        String kept = createEvent(alice);
+        for (String eventId : new String[] {deleted, deleted, kept}) {
+            mvc.perform(multipart("/api/events/" + eventId + "/photos").file(file(TestImages.jpeg(64, 48), "image/jpeg"))
+                            .header("Authorization", alice))
+                    .andExpect(status().isCreated());
+        }
+        assertThat(mongo.getCollection("fs.files").countDocuments()).isEqualTo(6);
+
+        mvc.perform(delete("/api/events/" + deleted).header("Authorization", alice)).andExpect(status().isNoContent());
+
+        assertThat(photos.findAll()).singleElement().satisfies(p -> assertThat(p.getEventId()).isEqualTo(kept));
+        assertThat(mongo.getCollection("fs.files").countDocuments()).isEqualTo(2);
+        assertThat(mongo.getCollection("fs.files").countDocuments(new Document("metadata.eventId", deleted))).isZero();
+        mvc.perform(get("/api/events/" + kept + "/photos").header("Authorization", alice))
+                .andExpect(jsonPath("$.length()").value(1));
     }
 }

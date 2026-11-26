@@ -54,6 +54,11 @@ public class PhotoStorage {
         }
     }
 
+    /** Supprime tous les fichiers (originaux et miniatures) rattachés à l'événement. */
+    public void deleteAllOf(String eventId) {
+        gridFs.delete(Query.query(Criteria.where("metadata.eventId").is(eventId)));
+    }
+
     public record StoredFile(InputStream content, long length) {
     }
 }

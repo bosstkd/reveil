@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -187,5 +189,76 @@ class EventIntegrationTest {
                 .sort(new Document("startsAt", 1))
                 .explain();
         assertThat(plan.toJson()).contains("IXSCAN").contains("ix_events_owner_starts_at").doesNotContain("\"SORT\"");
+    }
+
+    private String createConcert(String token) throws Exception {
+        String body = mvc.perform(post("/api/events").header("Authorization", token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Concert\",\"date\":\"2099-12-24\",\"time\":\"20:30\","
+                                + "\"timeZone\":\"Europe/Paris\",\"location\":\"Olympia\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return json.readTree(body).get("id").asText();
+    }
+
+    @Test
+    void everyEnteredFieldCanBeUpdatedByTheOwner() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String id = createConcert(alice);
+
+        mvc.perform(put("/api/events/" + id).header("Authorization", alice).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Concert reporté\",\"date\":\"2099-12-31\",\"time\":\"22:00\","
+                                + "\"timeZone\":\"America/New_York\",\"location\":\"Bercy\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.title").value("Concert reporté"))
+                .andExpect(jsonPath("$.startsAt").value("2100-01-01T03:00:00Z"))
+                .andExpect(jsonPath("$.localDateTime").value("2099-12-31T22:00:00"))
+                .andExpect(jsonPath("$.timeZone").value("America/New_York"))
+                .andExpect(jsonPath("$.location").value("Bercy"));
+
+        // Lieu vidé : retiré du document.
+        mvc.perform(put("/api/events/" + id).header("Authorization", alice).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Concert reporté\",\"date\":\"2099-12-31\",\"time\":\"22:00\","
+                                + "\"timeZone\":\"America/New_York\",\"location\":\"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.location").doesNotExist());
+
+        mvc.perform(get("/api/events/" + id).header("Authorization", alice))
+                .andExpect(jsonPath("$.title").value("Concert reporté"))
+                .andExpect(jsonPath("$.location").doesNotExist());
+        assertThat(events.count()).isEqualTo(1);
+    }
+
+    @Test
+    void deletedEventDisappearsFromTheOwnerList() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String id = createConcert(alice);
+
+        mvc.perform(delete("/api/events/" + id).header("Authorization", alice)).andExpect(status().isNoContent());
+
+        assertThat(events.count()).isZero();
+        mvc.perform(get("/api/events/" + id).header("Authorization", alice)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/events").header("Authorization", alice)).andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(delete("/api/events/" + id).header("Authorization", alice)).andExpect(status().isNotFound());
+        mvc.perform(put("/api/events/" + id).header("Authorization", alice).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"X\",\"date\":\"2099-12-24\",\"time\":\"20:30\",\"timeZone\":\"UTC\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void anotherUserCanNeitherUpdateNorDeleteTheEvent() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String bob = tokenFor("bob@example.com");
+        String id = createConcert(alice);
+
+        mvc.perform(put("/api/events/" + id).header("Authorization", bob).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Piraté\",\"date\":\"2099-12-24\",\"time\":\"20:30\",\"timeZone\":\"UTC\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(delete("/api/events/" + id).header("Authorization", bob)).andExpect(status().isForbidden());
+
+        mvc.perform(get("/api/events/" + id).header("Authorization", alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Concert"))
+                .andExpect(jsonPath("$.location").value("Olympia"));
     }
 }

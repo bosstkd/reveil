@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 /**
- * Création d'un événement : date et heure locales de l'utilisateur + son fuseau IANA.
+ * Création ({@code POST}) ou modification complète ({@code PUT}) d'un événement : date et heure locales de l'utilisateur + son fuseau IANA.
  * Le serveur en déduit l'instant UTC.
  */
 public record CreateEventRequest(

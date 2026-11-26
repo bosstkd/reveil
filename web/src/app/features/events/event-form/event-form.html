@@ -1,5 +1,5 @@
 <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="event-form" data-testid="event-form">
-  <h2>Nouvel événement</h2>
+  <h2>{{ editing() ? "Modifier l'événement" : 'Nouvel événement' }}</h2>
 
   <label for="event-title">Titre *</label>
   <input id="event-title" type="text" formControlName="title" [maxlength]="titleMax" data-testid="event-title" />
@@ -32,7 +32,7 @@
   <p class="hint" data-testid="event-timezone">Fuseau horaire : {{ timeZone }}</p>
 
   @if (isPast()) {
-    <p class="warning" role="status" data-testid="past-warning">{{ pastWarning }}</p>
+    <p class="warning" role="status" data-testid="past-warning">{{ pastWarning() }}</p>
   }
 
   <label for="event-location">Lieu (facultatif)</label>
@@ -45,7 +45,11 @@
   <div class="actions">
     <button type="button" class="secondary" (click)="cancelled.emit()" data-testid="event-cancel">Annuler</button>
     <button type="submit" [disabled]="submitting()" data-testid="event-submit">
-      {{ submitting() ? 'Création…' : "Créer l'événement" }}
+      @if (editing()) {
+        {{ submitting() ? 'Enregistrement…' : 'Enregistrer' }}
+      } @else {
+        {{ submitting() ? 'Création…' : "Créer l'événement" }}
+      }
     </button>
   </div>
 </form>
