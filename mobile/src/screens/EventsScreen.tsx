@@ -18,7 +18,7 @@ const EMPTY: Tab = { items: [], page: -1, hasNext: false, total: 0 };
 const CLOCK_TICK_MS = 60_000;
 
 /** Liste des événements de l'utilisateur (onglets « À venir » / « Passés »), avec création en place. */
-export function EventsScreen() {
+export function EventsScreen({ onOpen }: { onOpen?: (eventId: string) => void } = {}) {
   const { session, logout, authFetch } = useAuth();
   const [leaving, setLeaving] = useState(false);
   const [tabs, setTabs] = useState<Record<EventPeriod, Tab>>({ upcoming: EMPTY, past: EMPTY });
@@ -201,7 +201,12 @@ export function EventsScreen() {
         if (current.hasNext && !loading) void fetchTab(period, true);
       }}
       renderItem={({ item }) => (
-        <View testID="event-item" style={[styles.item, item.past && styles.past]}>
+        <Pressable
+          testID="event-item"
+          accessibilityRole="button"
+          onPress={() => onOpen?.(item.id)}
+          style={[styles.item, item.past && styles.past]}
+        >
           <Text testID="item-title" style={styles.itemTitle}>
             {item.title}
           </Text>
@@ -212,7 +217,7 @@ export function EventsScreen() {
             {timeUntil(item.startsAt, now)}
           </Text>
           {item.location ? <Text style={styles.meta}>{item.location}</Text> : null}
-        </View>
+        </Pressable>
       )}
     />
   );

@@ -190,3 +190,40 @@ est supprimé au prochain envoi). `400` : jeton vide, plate-forme absente ou inc
 - **Appui sur la notification** (application fermée ou en arrière-plan) ou lien `reveil://events/<id>` :
   ouvre l'écran de détail de l'événement (après connexion si nécessaire ; « Cet événement n'existe plus. » si
   supprimé). Application au premier plan : une alerte propose « Voir ».
+
+## Photos des événements
+
+Stockage : fichiers dans **GridFS** (bucket `fs` : `fs.files` / `fs.chunks`, métadonnées `ownerId`, `eventId`),
+métadonnées dans la collection `photos` (`eventId`, `ownerId`, `fileId`, `thumbnailFileId`, `contentType`, `size`,
+`width`, `height`, `createdAt` ; index `ix_photos_event_created_at`). Chaque photo a une **miniature JPEG**
+générée côté serveur (plus grand côté 400 px, `reveil.photos.thumbnail-size`, jamais agrandie ; transparence → fond blanc).
+
+### `POST /api/events/{id}/photos` (protégé, `multipart/form-data`, partie `file`)
+
+- Type contrôlé **sur le contenu** (signature) : JPEG ou PNG uniquement, le type déclaré est ignoré.
+- Taille ≤ 10 Mo (`reveil.photos.max-size`, `spring.servlet.multipart.*`, nginx `client_max_body_size 11m`) ;
+  dimensions ≤ 50 Mpx (`reveil.photos.max-pixels`), vérifiées avant décodage.
+- `201` → `{ "id", "eventId", "contentType", "size", "width", "height", "createdAt",
+  "url": "/api/events/{id}/photos/{photoId}/content", "thumbnailUrl": ".../thumbnail" }`
+- `400` fichier absent/vide/illisible · `404` événement inconnu ou d'un autre utilisateur · `413` trop volumineux ·
+  `415` type non pris en charge. Corps : `{ "message", "errors": [{ "field": "file", ... }] }`.
+
+### `GET /api/events/{id}/photos` (protégé)
+
+Galerie de l'événement, la plus récente d'abord (`404` si l'événement n'est pas à l'utilisateur).
+
+### `GET /api/events/{id}/photos/{photoId}/content` et `/thumbnail` (protégés)
+
+Octets de l'image d'origine / de la miniature (`Cache-Control: private, max-age=2592000`). `404` sinon.
+
+### Mobile
+
+- Un appui sur un événement de la liste ouvre son détail : galerie (miniatures) et bouton « Prendre une photo ».
+- **Autorisation caméra au premier usage** (appui sur le bouton, pas au lancement) via `expo-image-picker` ;
+  refus : message ; refus définitif : lien « Ouvrir les réglages ». Message iOS `NSCameraUsageDescription`
+  et permission Android `CAMERA` déclarés dans `app.json` (micro et photothèque non demandés).
+- Avant envoi, `expo-image-manipulator` **redimensionne à 2048 px de large maximum** (proportions conservées,
+  jamais agrandie) et réencode en **JPEG qualité 0,8** (≈ 0,5–1,5 Mo au lieu de 3–6 Mo) : une photo de 5 Mo
+  part en quelques secondes en 4G. Envoi abandonné après 30 s.
+- **Échec d'envoi** (réseau, 5xx, délai) : message d'erreur et bouton « Réessayer », qui renvoie la photo
+  déjà compressée sans reprendre de vue. La photo envoyée apparaît en tête de la galerie sans rechargement.

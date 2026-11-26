@@ -8,6 +8,11 @@ spring:
       # Par défaut localhost:27017 ; en déploiement : SPRING_DATA_MONGODB_URI
       database: reveil
       auto-index-creation: true
+  servlet:
+    multipart:
+      # Photos : refus au-delà de 10 Mo (reveil.photos.max-size), marge pour les en-têtes multipart.
+      max-file-size: 10MB
+      max-request-size: 11MB
 reveil:
   jwt:
     # Fourni par l'environnement (REVEIL_JWT_SECRET, >= 32 octets). Vide => clé éphémère.
@@ -31,6 +36,11 @@ reveil:
       project-id: ${REVEIL_FCM_PROJECT_ID:}
       # Contenu JSON du compte de service (REVEIL_FCM_CREDENTIALS_JSON) ; vide => GOOGLE_APPLICATION_CREDENTIALS.
       credentials-json: ${REVEIL_FCM_CREDENTIALS_JSON:}
+  photos:
+    # Taille maximale d'une photo envoyée (le mobile compresse en JPEG, largeur <= 2048 px).
+    max-size: 10MB
+    # Plus grand côté de la miniature générée côté serveur.
+    thumbnail-size: 400
 management:
   endpoints:
     web:

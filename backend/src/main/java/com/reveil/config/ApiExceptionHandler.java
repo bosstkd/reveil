@@ -4,6 +4,8 @@ import com.reveil.auth.EmailAlreadyUsedException;
 import com.reveil.auth.InvalidCredentialsException;
 import com.reveil.event.EventNotFoundException;
 import com.reveil.event.InvalidListQueryException;
+import com.reveil.photo.InvalidPhotoException;
+import com.reveil.photo.PhotoNotFoundException;
 import com.reveil.session.InvalidRefreshTokenException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 /** Format d'erreur commun : { "message": ..., "errors": [{ "field", "message" }] }. */
 @RestControllerAdvice
@@ -47,6 +51,28 @@ public class ApiExceptionHandler {
     @ExceptionHandler(EventNotFoundException.class)
     public ResponseEntity<Map<String, Object>> eventNotFound(EventNotFoundException e) {
         return body(HttpStatus.NOT_FOUND, e.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(PhotoNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> photoNotFound(PhotoNotFoundException e) {
+        return body(HttpStatus.NOT_FOUND, e.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(InvalidPhotoException.class)
+    public ResponseEntity<Map<String, Object>> invalidPhoto(InvalidPhotoException e) {
+        return body(e.getStatus(), e.getMessage(), List.of(new FieldError("file", e.getMessage())));
+    }
+
+    /** Requête multipart au-delà de spring.servlet.multipart.max-file-size / max-request-size. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> uploadTooLarge(MaxUploadSizeExceededException e) {
+        String message = "Photo trop volumineuse";
+        return body(HttpStatus.PAYLOAD_TOO_LARGE, message, List.of(new FieldError("file", message)));
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<Map<String, Object>> badMultipart(MultipartException e) {
+        return body(HttpStatus.BAD_REQUEST, "Requête multipart invalide", List.of());
     }
 
     /** Paramètre de requête non convertible (ex. {@code page=abc}). */

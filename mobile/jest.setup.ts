@@ -21,3 +21,29 @@ jest.mock('@react-native-firebase/messaging', () => {
     __listenerCount: (kind: string) => listeners[kind].size,
   };
 });
+
+// Appareil photo et retouche d'image (modules natifs Expo) : doubles contrôlables par les tests.
+jest.mock('expo-image-picker', () => ({
+  __esModule: true,
+  getCameraPermissionsAsync: jest.fn(async () => ({ granted: false, canAskAgain: true, status: 'undetermined' })),
+  requestCameraPermissionsAsync: jest.fn(async () => ({ granted: true, canAskAgain: true, status: 'granted' })),
+  launchCameraAsync: jest.fn(async () => ({
+    canceled: false,
+    assets: [{ uri: 'file:///camera/photo.jpg', width: 4032, height: 3024 }],
+  })),
+}));
+
+jest.mock('expo-image-manipulator', () => {
+  const saveAsync = jest.fn(async () => ({ uri: 'file:///cache/compressed.jpg', width: 2048, height: 1536 }));
+  const context: { resize: jest.Mock; renderAsync: jest.Mock } = {
+    resize: jest.fn((): unknown => context),
+    renderAsync: jest.fn(async () => ({ width: 2048, height: 1536, saveAsync })),
+  };
+  return {
+    __esModule: true,
+    SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
+    ImageManipulator: { manipulate: jest.fn(() => context) },
+    __context: context,
+    __saveAsync: saveAsync,
+  };
+});

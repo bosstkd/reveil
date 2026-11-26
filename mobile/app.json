@@ -30,7 +30,8 @@
       "package": "com.reveil.app",
       "googleServicesFile": "./google-services.json",
       "permissions": [
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -40,6 +41,14 @@
       "expo-secure-store",
       "@react-native-community/datetimepicker",
       "@react-native-firebase/app",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Reveil utilise l'appareil photo pour prendre des photos de vos événements.",
+          "photosPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "@react-native-firebase/messaging",
       [
         "expo-build-properties",
