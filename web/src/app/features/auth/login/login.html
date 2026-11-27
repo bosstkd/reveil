@@ -3,6 +3,11 @@
   @if (accountDeleted) {
     <p class="notice" role="status" data-testid="account-deleted">Votre compte et toutes vos données ont été supprimés.</p>
   }
+  @if (passwordReset) {
+    <p class="notice" role="status" data-testid="password-reset-done">
+      Votre mot de passe a été modifié. Connectez-vous avec le nouveau mot de passe.
+    </p>
+  }
 
   <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
     <label for="email">E-mail</label>
@@ -26,5 +31,6 @@
     </button>
   </form>
 
+  <p class="switch"><a routerLink="/mot-de-passe-oublie" data-testid="to-forgot-password">Mot de passe oublié ?</a></p>
   <p class="switch">Pas encore de compte ? <a routerLink="/inscription" data-testid="to-register">Créer un compte</a></p>
 </main>

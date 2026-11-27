@@ -14,6 +14,16 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/register/register').then((m) => m.Register),
   },
   {
+    path: 'mot-de-passe-oublie',
+    title: 'Mot de passe oublié — Reveil',
+    loadComponent: () => import('./features/auth/forgot-password/forgot-password').then((m) => m.ForgotPassword),
+  },
+  {
+    path: 'reinitialiser-mot-de-passe',
+    title: 'Nouveau mot de passe — Reveil',
+    loadComponent: () => import('./features/auth/reset-password/reset-password').then((m) => m.ResetPassword),
+  },
+  {
     path: 'evenements',
     title: 'Mes événements — Reveil',
     canActivate: [authGuard],

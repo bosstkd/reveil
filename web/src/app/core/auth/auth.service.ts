@@ -6,7 +6,13 @@ import { AuthResponse, AuthUser } from './auth.models';
 const STORAGE_KEY = 'reveil.session';
 
 /** Endpoints d'ouverture de session : jamais de jeton Bearer ni de tentative de rafraîchissement. */
-export const PUBLIC_AUTH_URLS = ['api/auth/register', 'api/auth/login', 'api/auth/refresh'];
+export const PUBLIC_AUTH_URLS = [
+  'api/auth/register',
+  'api/auth/login',
+  'api/auth/refresh',
+  'api/auth/password-reset/request',
+  'api/auth/password-reset/confirm',
+];
 
 interface Session {
   token: string;

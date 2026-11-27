@@ -31,6 +31,16 @@ services:
       # environnement est terminé en amont, hors de nos conteneurs : désactivé par défaut ici, à activer
       # (true) quand le relais public transmet « X-Forwarded-Proto: https ».
       REVEIL_REQUIRE_HTTPS: ${REVEIL_REQUIRE_HTTPS:-false}
+      # Mot de passe oublié : adresse publique de l'interface (base du lien envoyé par e-mail).
+      REVEIL_PUBLIC_URL: ${REVEIL_PUBLIC_URL:-http://localhost:8080/test/reveil}
+      # Serveur SMTP fourni par l'environnement (identifiants jamais dans le dépôt). Hôte vide => e-mails non
+      # envoyés, seulement journalisés ; ici leur contenu (lien de réinitialisation) l'est aussi, pour les tests.
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      REVEIL_MAIL_FROM: ${REVEIL_MAIL_FROM:-Reveil <no-reply@reveil.local>}
+      REVEIL_MAIL_LOG_CONTENT: ${REVEIL_MAIL_LOG_CONTENT:-true}
     expose:
       - "8081"
     depends_on:

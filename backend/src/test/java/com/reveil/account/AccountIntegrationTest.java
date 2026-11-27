@@ -67,6 +67,7 @@ class AccountIntegrationTest {
         photos.deleteAll();
         devices.deleteAll();
         deletions.deleteAll();
+        mongo.getCollection("password_reset_tokens").deleteMany(new Document());
         mongo.getCollection("fs.files").deleteMany(new Document());
         mongo.getCollection("fs.chunks").deleteMany(new Document());
     }
@@ -149,6 +150,9 @@ class AccountIntegrationTest {
                         .content("{\"email\":\"alice@example.com\",\"password\":\"secret123\"}"))
                 .andExpect(status().isOk()); // 2e appareil : 2e session
         Account bob = register("bob@example.com");
+        // Lien de réinitialisation du mot de passe en cours (story 13).
+        mongo.getCollection("password_reset_tokens").insertOne(new Document("_id", "hash-alice")
+                .append("userId", alice.id()).append("expiresAt", new java.util.Date()));
         String aliceEvent = populate(alice, "fcm-alice");
         String bobEvent = populate(bob, "fcm-bob");
 
@@ -162,6 +166,8 @@ class AccountIntegrationTest {
         assertThat(gridFsFilesOf(alice.id())).isZero();
         assertThat(devices.findByUserId(alice.id())).isEmpty();
         assertThat(devices.findByToken("fcm-alice")).isEmpty();
+        assertThat(mongo.getCollection("password_reset_tokens").countDocuments(new Document("userId", alice.id())))
+                .isZero();
         assertThat(deletions.findById(alice.id())).isPresent();
 
         // Jetons refusés immédiatement, connexion impossible, l'e-mail redevient libre.
@@ -194,12 +200,15 @@ class AccountIntegrationTest {
         mongo.getCollection("events").insertOne(new Document("title", "Tardif").append("ownerId", alice.id()));
         mongo.getCollection("photos").insertOne(new Document("eventId", "x").append("ownerId", alice.id()));
         mongo.getCollection("device_tokens").insertOne(new Document("token", "fcm-late").append("userId", alice.id()));
+        mongo.getCollection("password_reset_tokens").insertOne(new Document("_id", "late").append("userId", alice.id()));
 
         assertThat(accounts.purgePending()).isEqualTo(1);
 
         assertThat(mongo.getCollection("events").countDocuments(new Document("ownerId", alice.id()))).isZero();
         assertThat(mongo.getCollection("photos").countDocuments(new Document("ownerId", alice.id()))).isZero();
         assertThat(mongo.getCollection("device_tokens").countDocuments(new Document("userId", alice.id()))).isZero();
+        assertThat(mongo.getCollection("password_reset_tokens").countDocuments(new Document("userId", alice.id())))
+                .isZero();
         assertThat(deletions.count()).isZero();
         assertThat(mongo.getCollection("events").countDocuments(new Document("ownerId", bob.id()))).isEqualTo(1);
         assertThat(accounts.purgePending()).isZero();

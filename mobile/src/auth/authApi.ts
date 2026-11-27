@@ -107,3 +107,38 @@ export async function deleteAccount(
   }
   throw new AuthError('La suppression a échoué. Réessayez dans un instant.', res.status);
 }
+
+/** Confirmation de demande : identique que le compte existe ou non (même texte que l'API). */
+export const RESET_REQUESTED_MESSAGE =
+  'Si un compte est associé à cet e-mail, un lien de réinitialisation vient de lui être envoyé. Il est valable 1 heure.';
+/** Lien inconnu, expiré (1 h) ou déjà utilisé (même texte que l'API). */
+export const INVALID_RESET_LINK_MESSAGE = 'Ce lien de réinitialisation est invalide ou a expiré';
+
+/** Demande un lien de réinitialisation par e-mail (`202`, même réponse que le compte existe ou non). */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const res = await post('/api/auth/password-reset/request', { email });
+  if (res.ok) return;
+  const body = await res.json().catch(() => null);
+  if (res.status === 400 && Array.isArray(body?.errors) && body.errors.length > 0) {
+    throw new AuthError(body.errors.map((e: { message: string }) => e.message).join('\n'), 400);
+  }
+  throw new AuthError("La demande n'a pas pu être envoyée. Réessayez dans un instant.", res.status);
+}
+
+/**
+ * Enregistre le nouveau mot de passe (`204`). Le serveur ferme alors toutes les sessions du compte.
+ * Lien invalide/expiré/déjà utilisé : {@link AuthError} 400 avec {@link INVALID_RESET_LINK_MESSAGE}.
+ */
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  const res = await post('/api/auth/password-reset/confirm', { token, password });
+  if (res.ok) return;
+  const body = await res.json().catch(() => null);
+  const errors: { field: string; message: string }[] = Array.isArray(body?.errors) ? body.errors : [];
+  if (res.status === 400 && errors.some((e) => e.field === 'token')) {
+    throw new AuthError(INVALID_RESET_LINK_MESSAGE, 400);
+  }
+  if (res.status === 400 && errors.length > 0) {
+    throw new AuthError(errors.map((e) => e.message).join('\n'), 400);
+  }
+  throw new AuthError('La réinitialisation a échoué. Réessayez dans un instant.', res.status);
+}

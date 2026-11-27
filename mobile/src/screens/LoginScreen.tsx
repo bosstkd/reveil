@@ -4,7 +4,16 @@ import { AuthError } from '../auth/authApi';
 import { useAuth } from '../auth/AuthContext';
 import { INVALID_CREDENTIALS_MESSAGE } from '../auth/validation';
 
-export function LoginScreen({ onRegister }: { onRegister: () => void }) {
+export function LoginScreen({
+  onRegister,
+  onForgotPassword,
+  notice,
+}: {
+  onRegister: () => void;
+  onForgotPassword?: () => void;
+  /** Confirmation affichée en tête (ex. après la réinitialisation du mot de passe). */
+  notice?: string | null;
+}) {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,6 +44,11 @@ export function LoginScreen({ onRegister }: { onRegister: () => void }) {
       <Text style={styles.title} accessibilityRole="header">
         Se connecter
       </Text>
+      {notice ? (
+        <Text testID="login-notice" accessibilityRole="alert" style={styles.notice}>
+          {notice}
+        </Text>
+      ) : null}
 
       <Text style={styles.label}>E-mail</Text>
       <TextInput
@@ -76,6 +90,12 @@ export function LoginScreen({ onRegister }: { onRegister: () => void }) {
         {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Se connecter</Text>}
       </Pressable>
 
+      {onForgotPassword ? (
+        <Pressable testID="to-forgot-password" accessibilityRole="link" onPress={onForgotPassword} style={styles.switch}>
+          <Text style={styles.link}>Mot de passe oublié ?</Text>
+        </Pressable>
+      ) : null}
+
       <Pressable testID="to-register" accessibilityRole="link" onPress={onRegister} style={styles.switch}>
         <Text style={styles.link}>Pas encore de compte ? Créer un compte</Text>
       </Pressable>
@@ -89,6 +109,7 @@ const styles = StyleSheet.create({
   label: { marginTop: 12, marginBottom: 4, fontWeight: '600' },
   input: { borderWidth: 1, borderColor: '#bbb', borderRadius: 8, padding: 12, fontSize: 16 },
   error: { color: '#c92a2a', marginTop: 8 },
+  notice: { padding: 10, borderRadius: 8, backgroundColor: '#ebfbee', color: '#2b8a3e' },
   button: { marginTop: 24, backgroundColor: '#3b5bdb', borderRadius: 8, padding: 14, alignItems: 'center' },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },

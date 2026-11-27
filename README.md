@@ -33,6 +33,12 @@ Variables d'environnement de l'API :
 - `REVEIL_TLS_ENABLED`, `REVEIL_TLS_CERTIFICATE`, `REVEIL_TLS_PRIVATE_KEY` — TLS terminé par l'API elle-même
   (chemins de fichiers PEM, TLS 1.2/1.3). Sinon TLS terminé par un relais qui transmet `X-Forwarded-Proto: https`
   (pris en compte depuis un relais interne seulement : `server.forward-headers-strategy=native`).
+- `REVEIL_PUBLIC_URL` — adresse publique de l'interface web (ex. `https://hote/test/reveil`), base des liens de
+  réinitialisation du mot de passe (défaut `http://localhost:4200`). Jamais déduite de la requête (en-tête `Host`).
+- `SPRING_MAIL_HOST`, `SPRING_MAIL_PORT` (587), `SPRING_MAIL_USERNAME`, `SPRING_MAIL_PASSWORD` — serveur SMTP
+  (STARTTLS ; `REVEIL_MAIL_STARTTLS`, `REVEIL_MAIL_SMTP_AUTH`). Hôte absent : e-mails seulement journalisés
+  (destinataire et objet ; corps aussi si `REVEIL_MAIL_LOG_CONTENT=true`, environnements de test uniquement).
+  `REVEIL_MAIL_FROM` — expéditeur (défaut `Reveil <no-reply@reveil.local>`).
 
 ## Tests
 
@@ -365,6 +371,34 @@ si elle n'existe pas, est déjà supprimée ou appartient à un autre utilisateu
 Clients : écran **Paramètres** (web `/parametres`, lien depuis « Mes événements » ; mobile bouton « Paramètres »).
 Mot de passe demandé, puis (mobile) boîte de confirmation ; succès → session locale effacée, retour à la connexion
 (web : `/connexion?compte=supprime` affiche une confirmation).
+
+## Mot de passe oublié (story 13)
+
+Collection `password_reset_tokens` : `_id` = hash SHA-256 du jeton (le jeton, 256 bits aléatoires en base64url,
+n'est jamais stocké), `userId`, `createdAt`, `expiresAt` (index TTL). Validité **1 h** (`reveil.password-reset.validity`),
+**usage unique** (`findAndRemove` atomique conditionné à `expiresAt > maintenant`). Au plus 3 liens valides par compte
+(`max-active-links`) : au-delà les demandes sont ignorées, réponse identique. Tokens purgés avec le compte (story 12).
+
+### `POST /api/auth/password-reset/request` (public)
+
+`{ "email": "alice@example.com" }` → `202 { "message": "Si un compte est associé à cet e-mail, un lien de
+réinitialisation vient de lui être envoyé. Il est valable 1 heure." }` — **identique que le compte existe ou non** ;
+l'e-mail est envoyé hors requête (temps de réponse indépendant). `400` si l'e-mail est absent ou mal formé.
+
+L'e-mail contient le lien web `{REVEIL_PUBLIC_URL}/reinitialiser-mot-de-passe?token=…` et le lien mobile
+`reveil://reinitialiser-mot-de-passe?token=…`.
+
+### `POST /api/auth/password-reset/confirm` (public)
+
+`{ "token": "…", "password": "nouveau456" }` (mêmes règles qu'à l'inscription) → `204` : mot de passe remplacé,
+**toutes les sessions du compte révoquées** et autres liens invalidés ; événements et photos intacts.
+`400` `errors[].field = "token"` « Ce lien de réinitialisation est invalide ou a expiré » (inconnu, expiré, déjà
+utilisé) ; `400` `field = "password"` si le mot de passe est refusé (le lien n'est alors pas consommé).
+
+Clients : web `/mot-de-passe-oublie` (lien depuis la connexion) et `/reinitialiser-mot-de-passe?token=…` (jeton retiré
+de la barre d'adresse, succès → `/connexion?motdepasse=reinitialise`). Mobile : « Mot de passe oublié ? » →
+demande → « J'ai reçu le lien » (lien collé) ; ou lien profond `reveil://reinitialiser-mot-de-passe?token=…`
+ouvert depuis l'e-mail (`Linking`).
 
 ### HTTPS et en-têtes de sécurité
 

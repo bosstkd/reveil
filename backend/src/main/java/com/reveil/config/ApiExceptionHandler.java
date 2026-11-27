@@ -6,6 +6,7 @@ import com.reveil.auth.InvalidCredentialsException;
 import com.reveil.event.EventAccessDeniedException;
 import com.reveil.event.EventNotFoundException;
 import com.reveil.event.InvalidListQueryException;
+import com.reveil.passwordreset.InvalidResetTokenException;
 import com.reveil.photo.InvalidPhotoException;
 import com.reveil.photo.PhotoNotFoundException;
 import com.reveil.session.InvalidRefreshTokenException;
@@ -44,6 +45,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(IncorrectPasswordException.class)
     public ResponseEntity<Map<String, Object>> incorrectPassword(IncorrectPasswordException e) {
         return body(HttpStatus.FORBIDDEN, e.getMessage(), List.of(new FieldError("password", e.getMessage())));
+    }
+
+    /** Lien de réinitialisation inconnu, expiré ou déjà utilisé : 400 (et non 401, pas de rafraîchissement client). */
+    @ExceptionHandler(InvalidResetTokenException.class)
+    public ResponseEntity<Map<String, Object>> invalidResetToken(InvalidResetTokenException e) {
+        return body(HttpStatus.BAD_REQUEST, e.getMessage(), List.of(new FieldError("token", e.getMessage())));
     }
 
     @ExceptionHandler(InvalidRefreshTokenException.class)

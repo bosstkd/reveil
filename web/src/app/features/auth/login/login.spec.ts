@@ -82,6 +82,11 @@ describe('Login', () => {
     expect(q('to-register')?.getAttribute('href')).toBe('/inscription');
   });
 
+  it('propose un lien « Mot de passe oublié ? »', () => {
+    expect(q('to-forgot-password')?.getAttribute('href')).toBe('/mot-de-passe-oublie');
+    expect(q('password-reset-done')).toBeNull();
+  });
+
   it('n’affiche pas de confirmation de suppression de compte par défaut', () => {
     expect(q('account-deleted')).toBeNull();
   });

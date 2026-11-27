@@ -2,6 +2,7 @@ package com.reveil.account;
 
 import com.reveil.device.DeviceTokenRepository;
 import com.reveil.event.EventRepository;
+import com.reveil.passwordreset.PasswordResetTokenRepository;
 import com.reveil.photo.PhotoRepository;
 import com.reveil.photo.PhotoStorage;
 import com.reveil.session.SessionRepository;
@@ -19,19 +20,22 @@ public class AccountPurger {
     private final EventRepository events;
     private final PhotoRepository photos;
     private final PhotoStorage storage;
+    private final PasswordResetTokenRepository resetTokens;
 
     public AccountPurger(SessionRepository sessions, DeviceTokenRepository devices, EventRepository events,
-                         PhotoRepository photos, PhotoStorage storage) {
+                         PhotoRepository photos, PhotoStorage storage, PasswordResetTokenRepository resetTokens) {
         this.sessions = sessions;
         this.devices = devices;
         this.events = events;
         this.photos = photos;
         this.storage = storage;
+        this.resetTokens = resetTokens;
     }
 
     public void purge(String userId) {
         // Ordre : d'abord ce qui permet d'agir ou de notifier (sessions, jetons d'appareils), puis le contenu.
         sessions.deleteByUserId(userId);
+        resetTokens.deleteByUserId(userId);
         devices.deleteByUserId(userId);
         // Les rappels sont portés par les documents d'événements : supprimés avec eux.
         events.deleteByOwnerId(userId);

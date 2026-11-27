@@ -90,7 +90,7 @@ public class AuthService {
         return s == null || s.isBlank();
     }
 
-    static String normalize(String email) {
+    public static String normalize(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }
 }

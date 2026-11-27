@@ -18,7 +18,10 @@ export class Login {
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
   /** Arrivée après la suppression du compte (paramètres) : confirmation affichée. */
-  protected readonly accountDeleted = inject(ActivatedRoute).snapshot.queryParamMap.get('compte') === 'supprime';
+  private readonly query = inject(ActivatedRoute).snapshot.queryParamMap;
+  protected readonly accountDeleted = this.query.get('compte') === 'supprime';
+  /** Arrivée après la réinitialisation du mot de passe : confirmation affichée. */
+  protected readonly passwordReset = this.query.get('motdepasse') === 'reinitialise';
 
   protected readonly form = inject(NonNullableFormBuilder).group({
     email: ['', Validators.required],
