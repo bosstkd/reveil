@@ -83,3 +83,27 @@ export async function logout(session: Session): Promise<void> {
   await post('/api/auth/logout', { refreshToken: session.refreshToken }, { Authorization: `Bearer ${session.token}` })
     .catch(() => undefined);
 }
+
+export const INCORRECT_PASSWORD_MESSAGE = 'Mot de passe incorrect';
+
+/** Supprime le compte connecté et toutes ses données (`DELETE /api/account`, 204). */
+export async function deleteAccount(
+  authFetch: (path: string, init?: RequestInit) => Promise<Response>,
+  password: string,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await authFetch('/api/account', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+  } catch {
+    throw new AuthError(UNREACHABLE, 0);
+  }
+  if (res.ok) return;
+  if (res.status === 403 || res.status === 400) {
+    throw new AuthError(INCORRECT_PASSWORD_MESSAGE, res.status);
+  }
+  throw new AuthError('La suppression a échoué. Réessayez dans un instant.', res.status);
+}

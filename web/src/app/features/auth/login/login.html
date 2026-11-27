@@ -1,5 +1,8 @@
 <main class="card">
   <h1>Se connecter</h1>
+  @if (accountDeleted) {
+    <p class="notice" role="status" data-testid="account-deleted">Votre compte et toutes vos données ont été supprimés.</p>
+  }
 
   <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
     <label for="email">E-mail</label>

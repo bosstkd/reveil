@@ -14,7 +14,7 @@ C’est une application web après mobile qui permet de prendre des photos des e
 
 ```bash
 # API (MongoDB attendu sur localhost:27017, sinon SPRING_DATA_MONGODB_URI)
-cd backend && mvn spring-boot:run          # http://localhost:8081
+cd backend && REVEIL_REQUIRE_HTTPS=false mvn spring-boot:run   # http://localhost:8081 (HTTP : dev seulement)
 # Web (relaie /api vers :8081 via proxy.conf.json)
 cd web && npm install && npm start         # http://localhost:4200
 # Mobile
@@ -28,6 +28,11 @@ Variables d'environnement de l'API :
 - `REVEIL_FCM_PROJECT_ID` — projet Firebase pour l'envoi des notifications push. Absent : envois seulement journalisés.
 - `REVEIL_FCM_CREDENTIALS_JSON` — contenu JSON du compte de service Firebase (rôle « Firebase Cloud Messaging API Admin »).
   Absent : `GOOGLE_APPLICATION_CREDENTIALS` (chemin d'un fichier) est utilisé. Jamais dans le dépôt.
+- `REVEIL_REQUIRE_HTTPS` — `true` par défaut : toute requête arrivée en clair est refusée (`403` « Connexion HTTPS
+  requise », sauf `/actuator/health`). `false` uniquement en développement local.
+- `REVEIL_TLS_ENABLED`, `REVEIL_TLS_CERTIFICATE`, `REVEIL_TLS_PRIVATE_KEY` — TLS terminé par l'API elle-même
+  (chemins de fichiers PEM, TLS 1.2/1.3). Sinon TLS terminé par un relais qui transmet `X-Forwarded-Proto: https`
+  (pris en compte depuis un relais interne seulement : `server.forward-headers-strategy=native`).
 
 ## Tests
 
@@ -337,3 +342,38 @@ si elle n'existe pas, est déjà supprimée ou appartient à un autre utilisateu
   Les HEIC sont **convertis en JPEG dans le navigateur** (bibliothèque `heic-to`, libheif WebAssembly, LGPL-3.0,
   chargée à la demande : ~3,2 Mo / 0,5 Mo compressé) car l'API ne lit que JPEG/PNG. Envoi par lots
   (`photos/batch`, ≤ 10 fichiers et ≤ 45 Mo par requête), photos ajoutées en tête de la galerie.
+
+## Protection des données personnelles (story 12)
+
+### `DELETE /api/account` (protégé)
+
+```json
+{ "password": "motdepasse1" }
+```
+
+- `204` → compte supprimé. `403` → `{ "message": "Mot de passe incorrect", "errors": [{ "field": "password", ... }] }`
+  (403 et non 401 : les clients ne tentent pas de rafraîchir la session). `400` mot de passe absent.
+- Déroulement (`AccountService`) : demande enregistrée dans `account_deletions` (`_id` = id utilisateur, `requestedAt`,
+  `deadline` = +24 h, aucune donnée personnelle) → suppression de l'utilisateur → purge immédiate (`AccountPurger`) :
+  sessions de tous les appareils (jetons refusés aussitôt), jetons d'appareils, événements (rappels inclus, portés par
+  le document), métadonnées des photos et fichiers GridFS (`metadata.ownerId`).
+- Passe de contrôle `AccountPurgeScheduler` (`reveil.accounts.purge-cron`, toutes les 15 min) : rejoue la purge des
+  demandes de plus de `purge-grace` (10 min : écritures encore en vol, échec de la purge immédiate) puis clôt la
+  demande. Toutes les données disparaissent donc au plus tard ~25 min après la demande (engagement : 24 h).
+- L'e-mail redevient libre immédiatement.
+
+Clients : écran **Paramètres** (web `/parametres`, lien depuis « Mes événements » ; mobile bouton « Paramètres »).
+Mot de passe demandé, puis (mobile) boîte de confirmation ; succès → session locale effacée, retour à la connexion
+(web : `/connexion?compte=supprime` affiche une confirmation).
+
+### HTTPS et en-têtes de sécurité
+
+- API (Spring Security, toutes les réponses) : `Strict-Transport-Security: max-age=31536000 ; includeSubDomains`
+  (sur HTTPS), `Content-Security-Policy: default-src 'none'; …; frame-ancestors 'none'`, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`,
+  `Cache-Control: no-store` (hors réponses qui fixent le leur).
+- nginx (`web/nginx/default.conf`) : HSTS, CSP de l'interface (`script-src 'self' 'wasm-unsafe-eval'` et
+  `worker-src blob:` pour `heic-to/csp`), `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` ;
+  relaie `X-Forwarded-Proto` amont vers l'API.
+- Mobile : hors `__DEV__`, une `EXPO_PUBLIC_API_URL` non HTTPS fait échouer le démarrage (`resolveApiUrl`).
+- Web : appels relatifs → même schéma que la page.

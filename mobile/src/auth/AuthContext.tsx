@@ -12,6 +12,11 @@ interface AuthState {
   register: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Supprime définitivement le compte (confirmation par mot de passe) puis ferme la session locale.
+   * Mot de passe refusé : {@link api.AuthError} 403 « Mot de passe incorrect ».
+   */
+  deleteAccount: (password: string) => Promise<void>;
   /** fetch vers l'API avec le jeton Bearer ; sur 401, renouvelle le jeton une fois et rejoue. */
   authFetch: (path: string, init?: RequestInit) => Promise<Response>;
 }
@@ -114,9 +119,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return renewed ? call(renewed.token) : res;
   }, [refreshSession]);
 
+  const deleteAccount = useCallback(async (password: string) => {
+    await api.deleteAccount(authFetch, password);
+    // Toutes les sessions sont déjà révoquées côté serveur : seul l'état local reste à effacer.
+    await save(null);
+  }, [authFetch, save]);
+
   const value = useMemo(
-    () => ({ session, ready, register, login, logout, authFetch }),
-    [session, ready, register, login, logout, authFetch],
+    () => ({ session, ready, register, login, logout, deleteAccount, authFetch }),
+    [session, ready, register, login, logout, deleteAccount, authFetch],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

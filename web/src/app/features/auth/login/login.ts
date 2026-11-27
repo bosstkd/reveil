@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { INVALID_CREDENTIALS_MESSAGE } from '../../../core/auth/auth.models';
 import { AuthService } from '../../../core/auth/auth.service';
 
@@ -17,6 +17,8 @@ export class Login {
 
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
+  /** Arrivée après la suppression du compte (paramètres) : confirmation affichée. */
+  protected readonly accountDeleted = inject(ActivatedRoute).snapshot.queryParamMap.get('compte') === 'supprime';
 
   protected readonly form = inject(NonNullableFormBuilder).group({
     email: ['', Validators.required],

@@ -1,5 +1,6 @@
 package com.reveil.config;
 
+import com.reveil.account.IncorrectPasswordException;
 import com.reveil.auth.EmailAlreadyUsedException;
 import com.reveil.auth.InvalidCredentialsException;
 import com.reveil.event.EventAccessDeniedException;
@@ -37,6 +38,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<Map<String, Object>> invalidCredentials(InvalidCredentialsException e) {
         return body(HttpStatus.UNAUTHORIZED, e.getMessage(), List.of());
+    }
+
+    /** Confirmation de suppression du compte refusée : 403 (et non 401, qui déclencherait un rafraîchissement). */
+    @ExceptionHandler(IncorrectPasswordException.class)
+    public ResponseEntity<Map<String, Object>> incorrectPassword(IncorrectPasswordException e) {
+        return body(HttpStatus.FORBIDDEN, e.getMessage(), List.of(new FieldError("password", e.getMessage())));
     }
 
     @ExceptionHandler(InvalidRefreshTokenException.class)

@@ -6,3 +6,4 @@ button:disabled { opacity: .6; }
 .hint { margin: 0; font-size: .8rem; color: #666; }
 .field-error, .server-error { margin: 0; color: #c92a2a; font-size: .85rem; }
 .switch { margin-top: 1.2rem; font-size: .9rem; text-align: center; }
+.notice { padding: .5rem; border-radius: 6px; background: #ebfbee; color: #2b8a3e; font-size: .9rem; }

@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { Login } from './login';
 import { routes } from '../../../app.routes';
 
@@ -79,5 +80,17 @@ describe('Login', () => {
 
   it('propose un lien vers l’inscription', () => {
     expect(q('to-register')?.getAttribute('href')).toBe('/inscription');
+  });
+
+  it('n’affiche pas de confirmation de suppression de compte par défaut', () => {
+    expect(q('account-deleted')).toBeNull();
+  });
+
+  it('après la suppression du compte : confirmation affichée', async () => {
+    const harness = await RouterTestingHarness.create('/connexion?compte=supprime');
+    const root = harness.routeNativeElement!;
+    expect(root.querySelector('[data-testid="account-deleted"]')?.textContent).toContain(
+      'Votre compte et toutes vos données ont été supprimés.',
+    );
   });
 });

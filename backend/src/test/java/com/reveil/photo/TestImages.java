@@ -8,12 +8,12 @@ import java.util.Random;
 import javax.imageio.ImageIO;
 
 /** Images générées pour les tests. */
-final class TestImages {
+public final class TestImages {
 
     private TestImages() {
     }
 
-    static byte[] jpeg(int width, int height) {
+    public static byte[] jpeg(int width, int height) {
         return write(gradient(width, height, BufferedImage.TYPE_INT_RGB), "jpeg");
     }
 

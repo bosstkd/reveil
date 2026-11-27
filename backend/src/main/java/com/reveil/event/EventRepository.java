@@ -16,4 +16,7 @@ public interface EventRepository extends MongoRepository<Event, String>, EventRe
     Page<Event> findByOwnerIdAndStartsAtLessThan(String ownerId, Instant before, Pageable pageable);
 
     Optional<Event> findByIdAndOwnerId(String id, String ownerId);
+
+    /** Suppression du compte : tous les événements (et leurs rappels, portés par le document). */
+    long deleteByOwnerId(String ownerId);
 }

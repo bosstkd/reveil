@@ -18,7 +18,7 @@ const EMPTY: Tab = { items: [], page: -1, hasNext: false, total: 0 };
 const CLOCK_TICK_MS = 60_000;
 
 /** Liste des événements de l'utilisateur (onglets « À venir » / « Passés »), avec création en place. */
-export function EventsScreen({ onOpen }: { onOpen?: (eventId: string) => void } = {}) {
+export function EventsScreen({ onOpen, onSettings }: { onOpen?: (eventId: string) => void; onSettings?: () => void } = {}) {
   const { session, logout, authFetch } = useAuth();
   const [leaving, setLeaving] = useState(false);
   const [tabs, setTabs] = useState<Record<EventPeriod, Tab>>({ upcoming: EMPTY, past: EMPTY });
@@ -107,18 +107,25 @@ export function EventsScreen({ onOpen }: { onOpen?: (eventId: string) => void } 
         <Text style={styles.title} accessibilityRole="header">
           Mes événements
         </Text>
-        <Pressable
-          testID="logout"
-          accessibilityRole="button"
-          disabled={leaving}
-          onPress={() => {
-            setLeaving(true);
-            void logout();
-          }}
-          style={styles.outline}
-        >
-          <Text style={styles.outlineText}>Se déconnecter</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          {onSettings ? (
+            <Pressable testID="settings" accessibilityRole="button" onPress={onSettings} style={styles.outline}>
+              <Text style={styles.outlineText}>Paramètres</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            testID="logout"
+            accessibilityRole="button"
+            disabled={leaving}
+            onPress={() => {
+              setLeaving(true);
+              void logout();
+            }}
+            style={styles.outline}
+          >
+            <Text style={styles.outlineText}>Se déconnecter</Text>
+          </Pressable>
+        </View>
       </View>
       <Text style={styles.who}>Connecté en tant que {session?.user.email}</Text>
 
@@ -228,6 +235,7 @@ const styles = StyleSheet.create({
   container: { padding: 24, paddingTop: 64 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontSize: 26, fontWeight: '700' },
+  headerActions: { flexDirection: 'row', gap: 8 },
   outline: { borderWidth: 1, borderColor: '#3b5bdb', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, alignItems: 'center' },
   outlineText: { color: '#3b5bdb' },
   who: { color: '#666', marginVertical: 8 },

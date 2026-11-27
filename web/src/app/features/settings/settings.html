@@ -1,0 +1,41 @@
+<main class="settings">
+  <header>
+    <h1>Paramètres</h1>
+    <a routerLink="/evenements" data-testid="back">← Mes événements</a>
+  </header>
+  <p class="who">Connecté en tant que {{ auth.currentUser()?.email }}</p>
+
+  <section class="danger-zone" aria-labelledby="delete-title">
+    <h2 id="delete-title">Supprimer mon compte</h2>
+    <p>
+      Votre compte, vos événements, vos rappels, vos photos et les appareils enregistrés pour les notifications
+      seront supprimés définitivement (au plus tard sous 24 heures). Cette action est irréversible.
+    </p>
+
+    @if (!confirming()) {
+      <button type="button" class="danger-outline" (click)="startDeletion()" data-testid="delete-account">
+        Supprimer mon compte
+      </button>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="confirm()" novalidate data-testid="delete-form">
+        <label for="delete-password">Confirmez avec votre mot de passe</label>
+        <input
+          id="delete-password"
+          type="password"
+          formControlName="password"
+          autocomplete="current-password"
+          data-testid="delete-password"
+        />
+        @if (error(); as message) {
+          <p class="error" role="alert" data-testid="delete-error">{{ message }}</p>
+        }
+        <div class="actions">
+          <button type="submit" class="danger" [disabled]="deleting()" data-testid="delete-confirm">
+            {{ deleting() ? 'Suppression…' : 'Supprimer définitivement' }}
+          </button>
+          <button type="button" (click)="cancel()" [disabled]="deleting()" data-testid="delete-cancel">Annuler</button>
+        </div>
+      </form>
+    }
+  </section>
+</main>

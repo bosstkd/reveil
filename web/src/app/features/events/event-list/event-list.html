@@ -1,7 +1,10 @@
 <main class="events">
   <header>
     <h1>Mes événements</h1>
-    <button type="button" (click)="logout()" [disabled]="leaving()" data-testid="logout">Se déconnecter</button>
+    <div class="header-actions">
+      <a routerLink="/parametres" data-testid="settings">Paramètres</a>
+      <button type="button" (click)="logout()" [disabled]="leaving()" data-testid="logout">Se déconnecter</button>
+    </div>
   </header>
   <p class="who">Connecté en tant que {{ auth.currentUser()?.email }}</p>
 

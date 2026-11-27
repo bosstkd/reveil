@@ -73,6 +73,12 @@ describe('EventList', () => {
     localStorage.clear();
   });
 
+  it('propose un lien vers les paramètres (suppression du compte)', () => {
+    list('upcoming').flush(page('upcoming', []));
+    render();
+    expect(q('settings')!.getAttribute('href')).toBe('/parametres');
+  });
+
   it('charge les événements à venir et affiche titre, date, heure et temps restant', () => {
     list('upcoming').flush(page('upcoming', [event()]));
     render();

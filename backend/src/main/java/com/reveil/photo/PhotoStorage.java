@@ -59,6 +59,11 @@ public class PhotoStorage {
         gridFs.delete(Query.query(Criteria.where("metadata.eventId").is(eventId)));
     }
 
+    /** Supprime tous les fichiers (originaux et miniatures) de l'utilisateur : suppression du compte. */
+    public void deleteAllOwnedBy(String ownerId) {
+        gridFs.delete(Query.query(Criteria.where("metadata.ownerId").is(ownerId)));
+    }
+
     public record StoredFile(InputStream content, long length) {
     }
 }

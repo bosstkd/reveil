@@ -25,5 +25,11 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/events/event-detail/event-detail').then((m) => m.EventDetail),
   },
+  {
+    path: 'parametres',
+    title: 'Paramètres — Reveil',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/settings/settings').then((m) => m.Settings),
+  },
   { path: '**', redirectTo: 'evenements' },
 ];

@@ -11,3 +11,8 @@ coverage/
 .idea/
 *.iml
 .DS_Store
+# Certificats / clés TLS (jamais dans le dépôt)
+*.pem
+*.key
+*.p12
+*.jks

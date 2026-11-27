@@ -9,3 +9,6 @@ reveil:
   reminders:
     # Les tests déclenchent eux-mêmes le traitement des rappels.
     scheduler-enabled: false
+  accounts:
+    # Les tests déclenchent eux-mêmes la passe de purge (AccountService.purgePending()).
+    purge-scheduler-enabled: false

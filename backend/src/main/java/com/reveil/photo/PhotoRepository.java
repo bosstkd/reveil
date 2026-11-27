@@ -14,6 +14,9 @@ public interface PhotoRepository extends MongoRepository<Photo, String> {
 
     long deleteByEventId(String eventId);
 
+    /** Suppression du compte : métadonnées de toutes les photos de l'utilisateur. */
+    long deleteByOwnerId(String ownerId);
+
     /**
      * Retire atomiquement (findAndRemove) la photo de l'utilisateur et la renvoie : deux suppressions
      * concurrentes ne peuvent pas toutes deux réussir.

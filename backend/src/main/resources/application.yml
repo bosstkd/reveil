@@ -1,5 +1,14 @@
 server:
   port: ${PORT:8081}
+  # Derrière un relais (nginx) : X-Forwarded-Proto/For pris en compte (Tomcat RemoteIpValve, relais internes seulement).
+  forward-headers-strategy: native
+  # TLS terminé par l'API elle-même (facultatif ; sinon par le relais). Certificat et clé PEM fournis par
+  # l'environnement (chemins ou « classpath: »), jamais dans le dépôt.
+  ssl:
+    enabled: ${REVEIL_TLS_ENABLED:false}
+    certificate: ${REVEIL_TLS_CERTIFICATE:}
+    certificate-private-key: ${REVEIL_TLS_PRIVATE_KEY:}
+    enabled-protocols: TLSv1.3,TLSv1.2
 spring:
   application:
     name: reveil-backend
@@ -38,6 +47,15 @@ reveil:
       project-id: ${REVEIL_FCM_PROJECT_ID:}
       # Contenu JSON du compte de service (REVEIL_FCM_CREDENTIALS_JSON) ; vide => GOOGLE_APPLICATION_CREDENTIALS.
       credentials-json: ${REVEIL_FCM_CREDENTIALS_JSON:}
+  security:
+    # Requêtes en clair refusées (403). Désactivable pour le développement local en HTTP (REVEIL_REQUIRE_HTTPS=false).
+    require-https: ${REVEIL_REQUIRE_HTTPS:true}
+  accounts:
+    # Engagement RGPD : toutes les données d'un compte supprimé disparaissent sous 24 h.
+    purge-delay: PT24H
+    # Passe de contrôle (écritures encore en vol, reprise après échec) : demandes de plus de 10 min, toutes les 15 min.
+    purge-grace: PT10M
+    purge-cron: "0 */15 * * * *"
   photos:
     # Taille maximale d'une photo envoyée (le mobile compresse en JPEG, largeur <= 2048 px ; le web envoie l'original).
     max-size: 15MB
