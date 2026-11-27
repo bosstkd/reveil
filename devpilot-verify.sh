@@ -40,6 +40,16 @@ PY
 fi
 (cd "$ROOT/backend" && mvn -B -q test)
 
+echo "== Supervision (règles Prometheus) =="
+# Cohérence métriques / règles / tableau de bord : MonitoringConfigTest (mvn test). Tests unitaires des règles
+# d'alerte : promtool s'il est installé (PROMTOOL pour en indiquer un), sinon étape ignorée.
+PROMTOOL="${PROMTOOL:-$(command -v promtool || true)}"
+if [ -n "$PROMTOOL" ]; then
+  "$PROMTOOL" test rules "$ROOT/monitoring/prometheus/alerts.test.yml"
+else
+  echo "promtool absent : tests des règles d'alerte ignorés"
+fi
+
 echo "== Web (Angular) =="
 cd "$ROOT/web"
 [ -d node_modules ] || npm ci --no-audit --no-fund

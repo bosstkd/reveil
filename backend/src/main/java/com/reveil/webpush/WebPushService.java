@@ -7,6 +7,7 @@ import com.reveil.session.SessionService;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import org.slf4j.Logger;
@@ -110,19 +111,26 @@ public class WebPushService {
      * définitivement (404/410) sont oubliés. Renvoie le nombre de navigateurs atteints.
      */
     public int notify(String userId, WebPushMessage message) {
-        int sent = 0;
+        return (int) deliver(userId, message).stream().filter(r -> r == PushResult.SENT).count();
+    }
+
+    /**
+     * Comme {@link #notify}, mais renvoie l'issue de chaque envoi (un élément par navigateur abonné), pour la
+     * supervision des rappels (story 15).
+     */
+    public List<PushResult> deliver(String userId, WebPushMessage message) {
+        List<PushResult> results = new ArrayList<>();
         for (WebPushSubscription subscription : activeSubscriptionsOf(userId)) {
             PushResult result = sender.send(subscription, message);
-            if (result == PushResult.SENT) {
-                sent++;
-            } else if (result == PushResult.INVALID_TOKEN) {
+            results.add(result);
+            if (result == PushResult.INVALID_TOKEN) {
                 subscriptions.deleteByEndpoint(subscription.getEndpoint());
                 log.info("Abonnement Web Push expiré supprimé");
-            } else {
+            } else if (result != PushResult.SENT) {
                 log.warn("Notification Web Push non remise à un navigateur");
             }
         }
-        return sent;
+        return results;
     }
 
     /** L'API n'envoie de requêtes qu'en HTTPS vers un service push connu (pas d'envoi vers une adresse arbitraire). */

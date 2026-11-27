@@ -1,0 +1,60 @@
+# Tests des règles d'alerte : promtool test rules monitoring/prometheus/alerts.test.yml
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  # 10 % d'échecs pendant 1 h : alerte déclenchée.
+  - interval: 1m
+    input_series:
+      - series: 'reveil_reminders_deliveries_total{job="reveil-api",channel="fcm",status="success"}'
+        values: '0+9x70'
+      - series: 'reveil_reminders_deliveries_total{job="reveil-api",channel="webpush",status="failure"}'
+        values: '0+1x70'
+      - series: 'up{job="reveil-api"}'
+        values: '1x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: ReveilRappelsTauxEchecEleve
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Rappels : taux d'échec des envois supérieur à 5 % sur 1 h"
+              description: "10% des envois de rappels ont échoué sur la dernière heure (seuil 5 %)."
+  # 4 % d'échecs, jetons invalides non comptés comme échecs : pas d'alerte.
+  - interval: 1m
+    input_series:
+      - series: 'reveil_reminders_deliveries_total{job="reveil-api",channel="fcm",status="success"}'
+        values: '0+24x70'
+      - series: 'reveil_reminders_deliveries_total{job="reveil-api",channel="fcm",status="failure"}'
+        values: '0+1x70'
+      - series: 'reveil_reminders_deliveries_total{job="reveil-api",channel="fcm",status="invalid_token"}'
+        values: '0+10x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: ReveilRappelsTauxEchecEleve
+        exp_alerts: []
+  # Trop peu d'envois (1 échec sur 2) : pas d'alerte.
+  - interval: 1m
+    input_series:
+      - series: 'reveil_reminders_deliveries_total{job="reveil-api",channel="fcm",status="success"}'
+        values: '0x70'
+      - series: 'reveil_reminders_deliveries_total{job="reveil-api",channel="fcm",status="failure"}'
+        values: '0 1x69'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: ReveilRappelsTauxEchecEleve
+        exp_alerts: []
+  # Indicateur « à l'heure » : 3 rappels sur 4 à moins d'1 minute.
+  - interval: 1m
+    input_series:
+      - series: 'reveil_reminders_dispatched_total{on_time="true"}'
+        values: '0+3x70'
+      - series: 'reveil_reminders_dispatched_total{on_time="false"}'
+        values: '0+1x70'
+    promql_expr_test:
+      - expr: reveil:reminders_on_time_ratio:1h
+        eval_time: 65m
+        exp_samples:
+          - labels: 'reveil:reminders_on_time_ratio:1h'
+            value: 0.75

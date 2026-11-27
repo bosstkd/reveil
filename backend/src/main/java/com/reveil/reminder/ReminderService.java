@@ -3,6 +3,8 @@ package com.reveil.reminder;
 import com.reveil.device.DeviceService;
 import com.reveil.device.DeviceToken;
 import com.reveil.event.Event;
+import com.reveil.event.Reminder;
+import com.reveil.event.ReminderStatus;
 import com.reveil.push.PushMessage;
 import com.reveil.push.PushResult;
 import com.reveil.push.PushSender;
@@ -14,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -37,42 +40,51 @@ public class ReminderService {
     private final PushSender push;
     private final WebPushService webPush;
     private final ReminderSettings settings;
+    private final ReminderMonitor monitor;
     private final Clock clock;
 
     @Autowired
     public ReminderService(ReminderQueue queue, DeviceService devices, PushSender push, WebPushService webPush,
-                           ReminderSettings settings) {
-        this(queue, devices, push, webPush, settings, Clock.systemUTC());
+                           ReminderSettings settings, ReminderMonitor monitor) {
+        this(queue, devices, push, webPush, settings, monitor, Clock.systemUTC());
     }
 
     ReminderService(ReminderQueue queue, DeviceService devices, PushSender push, WebPushService webPush,
-                    ReminderSettings settings, Clock clock) {
+                    ReminderSettings settings, ReminderMonitor monitor, Clock clock) {
         this.queue = queue;
         this.devices = devices;
         this.push = push;
         this.webPush = webPush;
         this.settings = settings;
+        this.monitor = monitor;
         this.clock = clock;
     }
 
     /**
      * Traite tous les rappels échus ; renvoie le nombre d'événements notifiés. Chaque rappel est marqué envoyé
      * au moment où il est pris ({@link ReminderQueue#claimNextDue}) : il n'est jamais envoyé deux fois.
+     * Chaque envoi est journalisé et compté ({@link ReminderMonitor}) ; l'alerte sur le taux d'échec est
+     * réévaluée à chaque passage, même sans rappel (fenêtre glissante).
      */
     public int sendDueReminders() {
-        Instant now = clock.instant();
-        Instant dueBefore = now.plus(settings.lookahead());
-        long skipped = queue.skipStarted(dueBefore, now);
-        if (skipped > 0) {
-            log.info("Rappels abandonnés pour {} événement(s) déjà commencé(s)", skipped);
+        try {
+            Instant now = clock.instant();
+            Instant dueBefore = now.plus(settings.lookahead());
+            long skipped = queue.skipStarted(dueBefore, now);
+            if (skipped > 0) {
+                log.info("Rappels abandonnés pour {} événement(s) déjà commencé(s)", skipped);
+                monitor.skipped(skipped);
+            }
+            int processed = 0;
+            for (Optional<Event> next = queue.claimNextDue(dueBefore, now); next.isPresent();
+                 next = queue.claimNextDue(dueBefore, now)) {
+                remind(next.get(), now, dueBefore);
+                processed++;
+            }
+            return processed;
+        } finally {
+            monitor.evaluate();
         }
-        int processed = 0;
-        for (Optional<Event> next = queue.claimNextDue(dueBefore, now); next.isPresent();
-             next = queue.claimNextDue(dueBefore, now)) {
-            remind(next.get(), now);
-            processed++;
-        }
-        return processed;
     }
 
     /** Convertit les événements antérieurs à la gestion des rappels multiples (rappel par défaut si à venir). */
@@ -80,10 +92,11 @@ public class ReminderService {
         return queue.migrateLegacy(clock.instant(), settings.leadTime());
     }
 
-    private void remind(Event event, Instant now) {
+    private void remind(Event event, Instant now, Instant dueBefore) {
         if (!event.getStartsAt().isAfter(now)) {
             // Rappel en retard (API arrêtée) et événement déjà commencé : un rappel n'a plus de sens.
             log.info("Rappel abandonné : l'événement {} a déjà commencé", event.getId());
+            monitor.skipped(1);
             return;
         }
         String title = "Rappel : " + event.getTitle();
@@ -92,24 +105,43 @@ public class ReminderService {
                 "type", TYPE,
                 "eventId", event.getId(),
                 "link", "reveil://events/" + event.getId());
+        int recipients = 0;
         for (DeviceToken device : devices.activeDevicesOf(event.getOwnerId())) {
             PushResult result = push.send(new PushMessage(device.getToken(), title, body, data, event.getStartsAt(),
                     "reminder-" + event.getId()));
+            monitor.delivery(DeliveryChannel.FCM, DeliveryStatus.of(result), event);
+            recipients++;
             if (result == PushResult.INVALID_TOKEN) {
                 devices.forget(device.getToken());
-            } else if (result == PushResult.FAILED) {
-                log.warn("Rappel de l'événement {} non remis à un appareil", event.getId());
             }
         }
         // Navigateurs (story 14) : affiché par le service worker, onglet fermé ; clic → détail de l'événement.
         // Un échec d'envoi n'empêche pas le traitement des autres rappels (le rappel reste marqué envoyé).
         try {
-            webPush.notify(event.getOwnerId(), new WebPushMessage(title, body, "evenements/" + event.getId(),
-                    "reminder-" + event.getId(), Map.of("type", TYPE, "eventId", event.getId()), event.getStartsAt(),
-                    event.getId()));
+            List<PushResult> results = webPush.deliver(event.getOwnerId(), new WebPushMessage(title, body,
+                    "evenements/" + event.getId(), "reminder-" + event.getId(),
+                    Map.of("type", TYPE, "eventId", event.getId()), event.getStartsAt(), event.getId()));
+            for (PushResult result : results) {
+                monitor.delivery(DeliveryChannel.WEB_PUSH, DeliveryStatus.of(result), event);
+                recipients++;
+            }
         } catch (RuntimeException e) {
             log.warn("Rappel de l'événement {} non envoyé aux navigateurs : {}", event.getId(), e.toString());
+            monitor.delivery(DeliveryChannel.WEB_PUSH, DeliveryStatus.FAILURE, event);
         }
+        monitor.dispatched(event, claimedReminders(event, now, dueBefore), clock.instant(), recipients);
+    }
+
+    /** Rappels de l'événement marqués envoyés par ce passage (même instant de traitement, précision Mongo : ms). */
+    static List<Reminder> claimedReminders(Event event, Instant now, Instant dueBefore) {
+        if (event.getReminders() == null) {
+            return List.of();
+        }
+        long processedAt = now.toEpochMilli();
+        return event.getReminders().stream()
+                .filter(r -> r.getStatus() == ReminderStatus.SENT && r.getProcessedAt() != null
+                        && r.getProcessedAt().toEpochMilli() == processedAt && !r.getDueAt().isAfter(dueBefore))
+                .toList();
     }
 
     /**

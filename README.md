@@ -44,6 +44,9 @@ Variables d'environnement de l'API :
   (STARTTLS ; `REVEIL_MAIL_STARTTLS`, `REVEIL_MAIL_SMTP_AUTH`). Hôte absent : e-mails seulement journalisés
   (destinataire et objet ; corps aussi si `REVEIL_MAIL_LOG_CONTENT=true`, environnements de test uniquement).
   `REVEIL_MAIL_FROM` — expéditeur (défaut `Reveil <no-reply@reveil.local>`).
+- `MANAGEMENT_SERVER_PORT` — port de gestion interne (métriques Prometheus, `/actuator/reminders`, santé). Absent :
+  métriques refusées sur le port public. `REVEIL_ALERT_EMAIL` — destinataire de l'alerte « taux d'échec des rappels ».
+  `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` — journaux JSON.
 
 ## Tests
 
@@ -65,7 +68,8 @@ Sans libssl1.1 ni AVX : extraire `libssl1.1` (paquet Debian 11) dans un dossier 
 docker compose -f docker-compose.devpilot.yml up --build
 ```
 
-Services : `mongo`, `api` (Spring Boot, 8081), `web` (nginx, 8080 : interface + relais `/api`).
+Services : `mongo`, `api` (Spring Boot, 8081 ; gestion 8082), `web` (nginx, 8080 : interface + relais `/api`),
+`prometheus` (9090) et `grafana` (3000) pour la supervision des rappels.
 L'interface est construite pour être servie sous `/test/reveil/` (argument de build `BASE_HREF`, défaut `/`).
 
 ## API
@@ -448,3 +452,41 @@ services push autorisés (`reveil.push.web.allowed-hosts` : FCM, Mozilla, Micros
 
 `{ "endpoint": "..." }` → `204` (idempotent ; sans effet sur l'abonnement d'un autre compte).
 
+
+## Supervision de l'envoi des rappels (story 15)
+
+**Journal structuré** : chaque envoi à un destinataire est journalisé par `ReminderMonitor` (paires clé/valeur SLF4J
+`reminder.channel` = `fcm`|`webpush`, `reminder.status` = `success`|`failure`|`invalid_token`, `event.id`), puis une
+ligne par rappel envoyé (`reminder.delay_ms`, `reminder.on_time`, `reminder.recipients`). JSON avec
+`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` (activé dans docker-compose), texte lisible sinon. Aucun jeton dans les journaux.
+
+**Métriques** (Micrometer → `/actuator/prometheus`) :
+
+| Métrique Prometheus | Sens |
+|---|---|
+| `reveil_reminders_deliveries_total{channel,status}` | envois par canal et statut |
+| `reveil_reminders_dispatched_total{on_time}` | rappels envoyés à moins d'1 min (`true`) de l'heure prévue ou non |
+| `reveil_reminders_dispatch_delay_seconds` | histogramme de l'écart à l'heure prévue (palier 60 s) |
+| `reveil_reminders_skipped_total` | événements dont les rappels ont été abandonnés (déjà commencés) |
+| `reveil_reminders_on_time_ratio`, `reveil_reminders_failure_ratio` | taux sur la fenêtre glissante d'1 h (calculés par l'API) |
+| `reveil_reminders_alert_active`, `reveil_reminders_alerts_total` | état / déclenchements de l'alerte |
+
+Taux d'échec = `failure` / tous les envois ; un jeton invalide (application désinstallée) n'est pas un échec.
+
+**Alerte** : taux d'échec > 5 % sur 1 h, à partir de 20 envois (`reveil.monitoring.reminders.*`). Évaluée deux fois :
+- par l'API à chaque passage du planificateur : journal `ERROR` « ALERTE rappels » (`alert=reminder_failure_rate`,
+  `alert.state=firing`, puis `resolved`), e-mail à `REVEIL_ALERT_EMAIL` si défini (une fois par épisode) ;
+- par Prometheus : règle `ReveilRappelsTauxEchecEleve` (`monitoring/prometheus/alerts.yml`, testée par
+  `alerts.test.yml` avec `promtool test rules`).
+
+**`GET /actuator/reminders`** → `{window, deliveries{total,success,failure,invalidToken}, failureRate, reminders{sent,
+onTime,late}, onTimeRate, alert{active,failureThreshold,minDeliveries}}` (taux `null` sans donnée).
+
+**Accès** : endpoints Actuator (hors santé) servis uniquement sur le **port de gestion** `MANAGEMENT_SERVER_PORT`
+(8082 en docker-compose), réseau interne, sans jeton ni HTTPS exigé ; jamais relayé par nginx. Sans port distinct, ils
+sont refusés sur le port public (seul `/actuator/health` y répond). Avec un port distinct, la santé est sur ce port.
+
+**Tableau de bord** : Grafana « Reveil — Envoi des rappels » (`monitoring/grafana/dashboards/reveil-rappels.json`,
+provisionné) — rappels à l'heure, taux d'échec 1 h, envois par statut et par canal, écart p50/p95, état de l'alerte.
+docker-compose : services `prometheus` (9090) et `grafana` (3000, lecture anonyme), internes, configuration intégrée
+aux images (cibles `prometheus`, `grafana` du `Dockerfile`).

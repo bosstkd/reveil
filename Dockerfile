@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-# Construction multi-étapes de Reveil : API Java (cible "api") et interface Angular + nginx (cible "web").
+# Construction multi-étapes de Reveil : API Java (cible "api"), interface Angular + nginx (cible "web"),
+# supervision (cibles "prometheus" et "grafana").
 
 # ---------- API : build Maven ----------
 FROM maven:3.9-eclipse-temurin-17 AS api-build
@@ -16,7 +17,7 @@ RUN useradd --system --uid 10001 reveil
 COPY --from=api-build /app.jar /app/app.jar
 USER reveil
 ENV PORT=8081
-EXPOSE 8081
+EXPOSE 8081 8082
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 
 # ---------- Web : build Angular ----------
@@ -33,3 +34,12 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine AS web
 COPY web/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-build /src/dist/web/browser /usr/share/nginx/html
 EXPOSE 8080
+
+# ---------- Supervision (story 15) : Prometheus (collecte + alertes) et Grafana (tableau de bord) ----------
+# Configuration intégrée à l'image (aucun dossier monté depuis l'hôte).
+FROM prom/prometheus:v3.5.0 AS prometheus
+COPY monitoring/prometheus/prometheus.yml monitoring/prometheus/alerts.yml /etc/prometheus/
+
+FROM grafana/grafana:12.1.0 AS grafana
+COPY monitoring/grafana/provisioning/ /etc/grafana/provisioning/
+COPY monitoring/grafana/dashboards/ /etc/grafana/dashboards/

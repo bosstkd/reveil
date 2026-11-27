@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
-@EnableConfigurationProperties(ReminderSettings.class)
+@EnableConfigurationProperties({ReminderSettings.class, ReminderMonitoringSettings.class})
 public class ReminderConfig {
 
     /** Planification active sauf {@code reveil.reminders.scheduler-enabled=false} (tests). */

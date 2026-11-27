@@ -13,11 +13,15 @@ import com.reveil.device.DevicePlatform;
 import com.reveil.device.DeviceService;
 import com.reveil.device.DeviceToken;
 import com.reveil.event.Event;
+import com.reveil.event.Reminder;
+import com.reveil.event.ReminderStatus;
+import com.reveil.mail.EmailSender;
 import com.reveil.push.PushMessage;
 import com.reveil.push.PushResult;
 import com.reveil.push.PushSender;
 import com.reveil.webpush.WebPushMessage;
 import com.reveil.webpush.WebPushService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,6 +42,8 @@ class ReminderServiceTest {
     PushSender push;
     WebPushService webPush;
     ReminderService service;
+    SimpleMeterRegistry registry;
+    ReminderMonitor monitor;
 
     @BeforeEach
     void setUp() {
@@ -45,8 +51,11 @@ class ReminderServiceTest {
         devices = mock(DeviceService.class);
         push = mock(PushSender.class);
         webPush = mock(WebPushService.class);
+        registry = new SimpleMeterRegistry();
+        monitor = new ReminderMonitor(registry, new ReminderMonitoringSettings(Duration.ofHours(1), Duration.ofMinutes(1),
+                0.05, 20, ""), mock(EmailSender.class), Runnable::run, Clock.fixed(NOW, ZoneOffset.UTC));
         service = new ReminderService(queue, devices, push, webPush, new ReminderSettings(Duration.ofHours(1), Duration.ofSeconds(5)),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                monitor, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static Event event(String id, Instant startsAt, String location) {
@@ -160,7 +169,7 @@ class ReminderServiceTest {
         assertThat(service.sendDueReminders()).isEqualTo(1);
 
         ArgumentCaptor<WebPushMessage> sent = ArgumentCaptor.forClass(WebPushMessage.class);
-        verify(webPush).notify(eq("u1"), sent.capture());
+        verify(webPush).deliver(eq("u1"), sent.capture());
         WebPushMessage m = sent.getValue();
         assertThat(m.title()).isEqualTo("Rappel : Concert");
         assertThat(m.body()).isEqualTo("Commence dans 1 h, à 20:30 · Olympia");
@@ -176,10 +185,10 @@ class ReminderServiceTest {
         when(queue.claimNextDue(any(), any())).thenReturn(
                 Optional.of(event("e1", NOW.plus(Duration.ofHours(1)), null)),
                 Optional.of(event("e2", NOW.plus(Duration.ofHours(1)), null)), Optional.empty());
-        when(webPush.notify(any(), any())).thenThrow(new IllegalStateException("panne")).thenReturn(1);
+        when(webPush.deliver(any(), any())).thenThrow(new IllegalStateException("panne")).thenReturn(List.of(PushResult.SENT));
 
         assertThat(service.sendDueReminders()).isEqualTo(2);
-        verify(webPush, times(2)).notify(eq("u1"), any());
+        verify(webPush, times(2)).deliver(eq("u1"), any());
     }
 
     @Test
@@ -187,6 +196,101 @@ class ReminderServiceTest {
         when(queue.claimNextDue(any(), any()))
                 .thenReturn(Optional.of(event("e1", NOW.minusSeconds(60), null)), Optional.empty());
         service.sendDueReminders();
-        verify(webPush, never()).notify(any(), any());
+        verify(webPush, never()).deliver(any(), any());
+    }
+
+    private double count(String name, String... tags) {
+        var counter = registry.find(name).tags(tags).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
+    private static Event withReminders(Event e, Reminder... reminders) {
+        ReflectionTestUtils.setField(e, "reminders", List.of(reminders));
+        return e;
+    }
+
+    @Test
+    void everyDeliveryIsCountedWithItsChannelAndStatus() {
+        when(queue.claimNextDue(any(), any()))
+                .thenReturn(Optional.of(event("e1", NOW.plus(Duration.ofHours(1)), null)), Optional.empty());
+        when(devices.activeDevicesOf("u1")).thenReturn(List.of(device("gone"), device("flaky"), device("ok")));
+        when(push.send(any())).thenAnswer(inv -> switch (((PushMessage) inv.getArgument(0)).token()) {
+            case "gone" -> PushResult.INVALID_TOKEN;
+            case "flaky" -> PushResult.FAILED;
+            default -> PushResult.SENT;
+        });
+        when(webPush.deliver(any(), any())).thenReturn(List.of(PushResult.SENT, PushResult.INVALID_TOKEN));
+
+        service.sendDueReminders();
+
+        assertThat(count(ReminderMonitor.DELIVERIES, "channel", "fcm", "status", "success")).isEqualTo(1);
+        assertThat(count(ReminderMonitor.DELIVERIES, "channel", "fcm", "status", "failure")).isEqualTo(1);
+        assertThat(count(ReminderMonitor.DELIVERIES, "channel", "fcm", "status", "invalid_token")).isEqualTo(1);
+        assertThat(count(ReminderMonitor.DELIVERIES, "channel", "webpush", "status", "success")).isEqualTo(1);
+        assertThat(count(ReminderMonitor.DELIVERIES, "channel", "webpush", "status", "invalid_token")).isEqualTo(1);
+        assertThat(monitor.snapshot().deliveries().total()).isEqualTo(5);
+        assertThat(monitor.snapshot().failureRate()).isEqualTo(0.2);
+    }
+
+    @Test
+    void aBrowserErrorCountsAsAFailedDelivery() {
+        when(queue.claimNextDue(any(), any()))
+                .thenReturn(Optional.of(event("e1", NOW.plus(Duration.ofHours(1)), null)), Optional.empty());
+        when(webPush.deliver(any(), any())).thenThrow(new IllegalStateException("panne"));
+
+        service.sendDueReminders();
+
+        assertThat(count(ReminderMonitor.DELIVERIES, "channel", "webpush", "status", "failure")).isEqualTo(1);
+    }
+
+    @Test
+    void theRemindersClaimedByThisPassAreMeasuredAgainstTheirDueTime() {
+        Instant starts = NOW.plus(Duration.ofHours(1));
+        Event e = withReminders(event("e1", starts, null),
+                new Reminder(1440, starts.minus(Duration.ofDays(1)), ReminderStatus.SENT, NOW.minus(Duration.ofHours(23))),
+                new Reminder(60, NOW.plusSeconds(3), ReminderStatus.SENT, NOW), // anticipé de 3 s : à l'heure
+                new Reminder(15, starts.minus(Duration.ofMinutes(15)), ReminderStatus.SCHEDULED, null));
+        when(queue.claimNextDue(any(), any())).thenReturn(Optional.of(e), Optional.empty());
+
+        service.sendDueReminders();
+
+        assertThat(count(ReminderMonitor.DISPATCHED, "on_time", "true")).isEqualTo(1);
+        assertThat(count(ReminderMonitor.DISPATCHED, "on_time", "false")).isZero();
+        assertThat(monitor.snapshot().onTimeRate()).isEqualTo(1.0);
+    }
+
+    @Test
+    void aReminderSentMoreThanAMinuteLateIsNotOnTime() {
+        Instant starts = NOW.plus(Duration.ofMinutes(50));
+        Event e = withReminders(event("e1", starts, null),
+                new Reminder(60, NOW.minus(Duration.ofMinutes(10)), ReminderStatus.SENT, NOW)); // API arrêtée 10 min
+        when(queue.claimNextDue(any(), any())).thenReturn(Optional.of(e), Optional.empty());
+
+        service.sendDueReminders();
+
+        assertThat(count(ReminderMonitor.DISPATCHED, "on_time", "false")).isEqualTo(1);
+        assertThat(registry.find(ReminderMonitor.DELAY).timer().totalTime(java.util.concurrent.TimeUnit.MINUTES))
+                .isEqualTo(10.0);
+        assertThat(monitor.snapshot().onTimeRate()).isEqualTo(0.0);
+    }
+
+    @Test
+    void skippedRemindersAreCounted() {
+        when(queue.skipStarted(any(), any())).thenReturn(2L);
+        when(queue.claimNextDue(any(), any())).thenReturn(Optional.empty());
+
+        service.sendDueReminders();
+
+        assertThat(count(ReminderMonitor.SKIPPED)).isEqualTo(2);
+    }
+
+    @Test
+    void theAlertIsEvaluatedAtEveryPassEvenWhenTheQueueFails() {
+        when(queue.claimNextDue(any(), any())).thenThrow(new IllegalStateException("base indisponible"));
+        for (int i = 0; i < 20; i++) {
+            monitor.delivery(DeliveryChannel.FCM, DeliveryStatus.FAILURE, event("e" + i, NOW, null));
+        }
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, service::sendDueReminders);
+        assertThat(monitor.isAlertActive()).isTrue();
     }
 }

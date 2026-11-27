@@ -46,8 +46,14 @@ services:
       SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
       REVEIL_MAIL_FROM: ${REVEIL_MAIL_FROM:-Reveil <no-reply@reveil.local>}
       REVEIL_MAIL_LOG_CONTENT: ${REVEIL_MAIL_LOG_CONTENT:-true}
+      # Supervision (story 15) : port de gestion interne (métriques Prometheus, /actuator/reminders, santé), jamais
+      # relayé par "web". Journaux JSON (ECS) : chaque envoi de rappel avec son statut. E-mail d'alerte facultatif.
+      MANAGEMENT_SERVER_PORT: "8082"
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
+      REVEIL_ALERT_EMAIL: ${REVEIL_ALERT_EMAIL:-}
     expose:
       - "8081"
+      - "8082"
     depends_on:
       mongo:
         condition: service_healthy
@@ -66,5 +72,39 @@ services:
       - api
     restart: unless-stopped
 
+  # Supervision des rappels (story 15) : collecte de api:8082 et règle d'alerte (taux d'échec > 5 % sur 1 h).
+  prometheus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prometheus
+    volumes:
+      - prometheus-data:/prometheus
+    expose:
+      - "9090"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Tableau de bord « Reveil — Envoi des rappels » (provisionné), consultation anonyme en lecture seule.
+  grafana:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/reveil-rappels.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+    expose:
+      - "3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   mongo-data:
+  prometheus-data:
+  grafana-data:

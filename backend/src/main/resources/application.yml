@@ -89,6 +89,17 @@ reveil:
     web-url: ${REVEIL_PUBLIC_URL:http://localhost:4200}
     # Lien profond de l'application mobile.
     mobile-url: reveil://reinitialiser-mot-de-passe
+  monitoring:
+    # Supervision de l'envoi des rappels (story 15) : indicateurs sur une fenêtre glissante d'1 h.
+    reminders:
+      window: PT1H
+      # Un rappel est « à l'heure » s'il part à moins d'1 minute de son échéance.
+      on-time-tolerance: PT1M
+      # Alerte si plus de 5 % des envois échouent sur la fenêtre (à partir de 20 envois).
+      failure-threshold: 0.05
+      min-deliveries: 20
+      # Destinataire de l'e-mail d'alerte (REVEIL_ALERT_EMAIL) ; vide : alerte seulement journalisée (ERROR).
+      alert-email: ${REVEIL_ALERT_EMAIL:}
   photos:
     # Taille maximale d'une photo envoyée (le mobile compresse en JPEG, largeur <= 2048 px ; le web envoie l'original).
     max-size: 15MB
@@ -97,6 +108,11 @@ reveil:
     # Plus grand côté de la miniature générée côté serveur.
     thumbnail-size: 400
 management:
+  # Port de gestion (MANAGEMENT_SERVER_PORT, ex. 8082) : réseau interne uniquement (collecte Prometheus). Sans port
+  # distinct, seul /actuator/health reste accessible sur le port de l'API ; les métriques y sont refusées.
+  metrics:
+    tags:
+      application: reveil-backend
   health:
     # Le serveur SMTP n'est pas une dépendance de démarrage : son indisponibilité ne rend pas l'API « DOWN ».
     mail:
@@ -104,4 +120,5 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        # prometheus : métriques ; reminders : supervision des rappels (taux à l'heure, taux d'échec, alerte).
+        include: health,prometheus,reminders

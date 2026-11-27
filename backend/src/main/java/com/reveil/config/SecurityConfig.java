@@ -37,17 +37,22 @@ public class SecurityConfig {
     static final long HSTS_MAX_AGE_SECONDS = 31_536_000;
 
     @Bean
+    public ManagementPort managementPort() {
+        return new ManagementPort();
+    }
+
+    @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, TokenService tokens, SessionService sessions,
-                                                   ObjectMapper json,
+                                                   ObjectMapper json, ManagementPort managementPort,
                                                    @Value("${reveil.security.require-https:true}") boolean requireHttps)
             throws Exception {
         if (requireHttps) {
-            http.addFilterBefore(new HttpsEnforcementFilter(json), DisableEncodeUrlFilter.class);
+            http.addFilterBefore(new HttpsEnforcementFilter(json, managementPort), DisableEncodeUrlFilter.class);
         }
         return http
                 .csrf(AbstractHttpConfigurer::disable) // pas de cookie de session : CSRF sans objet
@@ -69,6 +74,9 @@ public class SecurityConfig {
                                 "/api/auth/refresh", "/api/auth/logout", "/api/auth/password-reset/request",
                                 "/api/auth/password-reset/confirm").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/error").permitAll()
+                        // Métriques et supervision : port de gestion interne uniquement, jamais le port public.
+                        .requestMatchers(managementPort).permitAll()
+                        .requestMatchers("/actuator", "/actuator/**").denyAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint((req, res, ex) ->

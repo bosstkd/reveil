@@ -148,7 +148,9 @@ describe('EventList', () => {
     const start = performance.now();
     render();
     expect(el.querySelectorAll('[data-testid="event-item"]').length).toBe(100);
-    expect(performance.now() - start).toBeLessThan(2000);
+    // Garde-fou contre un rendu pathologique (ex. quadratique), pas un banc d'essai : jsdom sur une
+    // machine de vérification chargée dépasse parfois 2 s pour un rendu normal (~0,2 s au repos).
+    expect(performance.now() - start).toBeLessThan(5000);
   });
 
   it('état vide : bouton « Créer mon premier événement » qui ouvre le formulaire', () => {

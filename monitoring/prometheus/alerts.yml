@@ -1,0 +1,33 @@
+# Alertes de supervision des rappels (story 15). Seuils identiques à reveil.monitoring.reminders.* (application.yml) :
+# taux d'échec > 5 % sur 1 h, à partir de 20 envois. « Jeton invalide » n'est pas un échec (appareil désinstallé).
+groups:
+  - name: reveil-rappels
+    rules:
+      - record: reveil:reminders_failure_ratio:1h
+        expr: |
+          sum(increase(reveil_reminders_deliveries_total{status="failure"}[1h]))
+            / sum(increase(reveil_reminders_deliveries_total[1h]))
+      - record: reveil:reminders_on_time_ratio:1h
+        expr: |
+          sum(increase(reveil_reminders_dispatched_total{on_time="true"}[1h]))
+            / sum(increase(reveil_reminders_dispatched_total[1h]))
+
+      - alert: ReveilRappelsTauxEchecEleve
+        expr: |
+          reveil:reminders_failure_ratio:1h > 0.05
+            and on() sum(increase(reveil_reminders_deliveries_total[1h])) >= 20
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Rappels : taux d'échec des envois supérieur à 5 % sur 1 h"
+          description: "{{ $value | humanizePercentage }} des envois de rappels ont échoué sur la dernière heure (seuil 5 %)."
+
+      - alert: ReveilApiNonCollectee
+        expr: up{job="reveil-api"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Métriques de l'API Reveil indisponibles"
+          description: "Prometheus ne collecte plus /actuator/prometheus : la supervision des rappels est aveugle."

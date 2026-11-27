@@ -333,10 +333,13 @@ class ReminderIntegrationTest {
     ReminderSettings settings;
     @Autowired
     com.reveil.webpush.WebPushService webPushService;
+    @Autowired
+    ReminderMonitor monitor;
 
     /** Planificateur à l'heure {@code at}. */
     private ReminderService at(Instant at) {
-        return new ReminderService(queue, deviceService, push, webPushService, settings, Clock.fixed(at, ZoneOffset.UTC));
+        return new ReminderService(queue, deviceService, push, webPushService, settings, monitor,
+                Clock.fixed(at, ZoneOffset.UTC));
     }
 
     @Test

@@ -44,6 +44,11 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-security</artifactId>
     </dependency>
+    <!-- Supervision des rappels (story 15) : métriques au format Prometheus (/actuator/prometheus). -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
     <!-- Envoi d'e-mails (SMTP) : réinitialisation du mot de passe. -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

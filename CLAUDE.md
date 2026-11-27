@@ -14,8 +14,9 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
   `features/` (écrans). Appels API en chemins **relatifs** (`api/...`), base href au build. Tests Vitest (`ng test`).
 - `mobile/` — React Native / Expo SDK 58. `src/screens`, `src/events` (modèles + API), `src/auth`. Tests Jest
   (`jest-expo`, `@testing-library/react-native`), via `<App />` avec `fetch` simulé.
-- Docker : `Dockerfile` multi-étapes (cibles `api`, `web` = nginx 8080 relayant `/api`), `docker-compose.devpilot.yml`
-  (mongo 4.4, api, web ; argument `BASE_HREF=/test/reveil/`).
+- Docker : `Dockerfile` multi-étapes (cibles `api`, `web` = nginx 8080 relayant `/api`, `prometheus`, `grafana`),
+  `docker-compose.devpilot.yml` (mongo 4.4, api, web, prometheus, grafana ; argument `BASE_HREF=/test/reveil/`).
+- `monitoring/` — configuration Prometheus (collecte, règles d'alerte) et Grafana (provisionnement, tableau de bord).
 
 ## Conventions
 - Code, commentaires, messages et tests en **français**. Textes d'erreur API en français.
@@ -59,6 +60,15 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
   `service-worker.spec.ts`, lecture via `node:fs`, types dans `src/node-test-shims.d.ts`). Déconnexion /
   suppression du compte → `forgetBrowser()`. Contenu envoyé : `{title, body, url (relative à la portée), tag, data}`.
   Tests backend : `@MockitoBean WebPushSender`, `TestBrowser` (déchiffrement), vecteur RFC 8291.
+- Supervision des rappels (story 15) : `reminder/ReminderMonitor` (journal SLF4J clé/valeur par envoi, compteurs
+  Micrometer `reveil.reminders.*`, fenêtre glissante 1 h `SlidingWindow`, alerte taux d'échec > 5 % ≥ 20 envois :
+  log ERROR + e-mail `REVEIL_ALERT_EMAIL`). `ReminderService` appelle `delivery()` par destinataire (Web Push via
+  `WebPushService.deliver` → liste de `PushResult`), `dispatched()` par rappel (écart à `dueAt`, à l'heure si < 1 min),
+  `evaluate()` à chaque passage. `invalid_token` ≠ échec. Endpoint `/actuator/reminders`. Actuator hors santé :
+  uniquement sur le port de gestion distinct (`ManagementPort`, `MANAGEMENT_SERVER_PORT`, 8082 en compose) sinon
+  `denyAll`. `monitoring/` : Prometheus (`alerts.yml` + `alerts.test.yml` promtool) et Grafana (tableau de bord JSON) ;
+  noms de métriques vérifiés par `MonitoringConfigTest` — renommer une métrique = mettre à jour `monitoring/`.
+  Tests Prometheus réels : `@AutoConfigureObservability` (export désactivé par défaut en test).
 - HTTPS : `reveil.security.require-https` (défaut true, `HttpsEnforcementFilter` → 403 en clair ; tests : false via
   `src/test/resources/application.properties`, vérifié par `SecurityHeadersTest`/`HttpsIntegrationTest` avec TLS réel
   autosigné). TLS natif facultatif (`REVEIL_TLS_*`, PEM). `forward-headers-strategy: native`. Compose : false.
@@ -66,7 +76,8 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
   Mobile : `resolveApiUrl` refuse HTTP hors `__DEV__`.
 
 ## Commandes
-- Tout vérifier : `./devpilot-verify.sh` (backend `mvn test`, web `ng test` + build prod, mobile `jest` + `tsc`).
+- Tout vérifier : `./devpilot-verify.sh` (backend `mvn test`, `promtool test rules` si installé, web `ng test` +
+  build prod, mobile `jest` + `tsc`).
 - Backend seul : `cd backend && mvn test`. Lancement local en HTTP : `REVEIL_REQUIRE_HTTPS=false`. MongoDB embarqué 4.4 → besoin de `libcrypto.so.1.1` : le script le
   télécharge dans `~/.cache/reveil/libssl1.1` et règle `LD_LIBRARY_PATH` (ou `EMBEDDED_MONGO_VERSION=7.0.14` si AVX).
 - Web : `cd web && npx ng test --watch=false`. Mobile : `cd mobile && npm test && npm run typecheck`.
@@ -80,4 +91,5 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
 web glisser-déposer JPEG/PNG/HEIC ≤ 15 Mo, `photos/batch`) · 11 visionneuse plein écran + suppression de photo
 · 12 suppression du compte (RGPD, paramètres web/mobile), HTTPS obligatoire, en-têtes de sécurité
 · 13 mot de passe oublié (lien e-mail 1 h, usage unique, écrans web/mobile) · 14 notifications navigateur (Web Push,
-service worker, activation dans les paramètres web).
+service worker, activation dans les paramètres web) · 15 supervision des rappels (journal structuré, métriques
+Prometheus, taux à l'heure, alerte échecs > 5 %/1 h, Grafana).
