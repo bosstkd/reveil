@@ -1,0 +1,83 @@
+<form [formGroup]="form" (ngSubmit)="submit()" novalidate class="event-form" data-testid="event-form">
+  <h2>{{ editing() ? "Modifier l'événement" : 'Nouvel événement' }}</h2>
+
+  <label for="event-title">Titre *</label>
+  <input id="event-title" type="text" formControlName="title" [maxlength]="titleMax" data-testid="event-title" />
+  @if (form.controls.title.touched && form.controls.title.invalid) {
+    <p class="field-error" data-testid="title-error">
+      @if (form.controls.title.hasError('maxlength')) {
+        Le titre ne doit pas dépasser {{ titleMax }} caractères.
+      } @else {
+        Le titre est obligatoire.
+      }
+    </p>
+  }
+
+  <div class="row">
+    <div>
+      <label for="event-date">Date *</label>
+      <input id="event-date" type="date" formControlName="date" data-testid="event-date" />
+      @if (form.controls.date.touched && form.controls.date.invalid) {
+        <p class="field-error" data-testid="date-error">La date est obligatoire.</p>
+      }
+    </div>
+    <div>
+      <label for="event-time">Heure *</label>
+      <input id="event-time" type="time" formControlName="time" data-testid="event-time" />
+      @if (form.controls.time.touched && form.controls.time.invalid) {
+        <p class="field-error" data-testid="time-error">L'heure est obligatoire.</p>
+      }
+    </div>
+  </div>
+  <p class="hint" data-testid="event-timezone">Fuseau horaire : {{ timeZone }}</p>
+
+  @if (isPast()) {
+    <p class="warning" role="status" data-testid="past-warning">{{ pastWarning() }}</p>
+  }
+
+  <label for="event-location">Lieu (facultatif)</label>
+  <input id="event-location" type="text" formControlName="location" data-testid="event-location" />
+
+  <fieldset class="reminders" data-testid="event-reminders">
+    <legend>Rappels (jusqu'à {{ maxReminders }})</legend>
+    <div class="choices">
+      @for (minutes of reminderOptions; track minutes) {
+        <label class="choice" [class.chosen]="isReminderChosen(minutes)">
+          <input
+            type="checkbox"
+            [checked]="isReminderChosen(minutes)"
+            [disabled]="isReminderLocked(minutes)"
+            (change)="toggleReminder(minutes)"
+            [attr.data-testid]="'reminder-' + minutes"
+          />
+          {{ reminderDelay(minutes) }}
+        </label>
+      }
+    </div>
+    @if (reminders().length === 0) {
+      <p class="hint" data-testid="reminders-off">Aucun rappel : vous ne serez pas prévenu avant cet événement.</p>
+    } @else {
+      @if (reminders().length >= maxReminders) {
+        <p class="hint" data-testid="reminders-max">{{ maxReminders }} rappels maximum.</p>
+      }
+      <button type="button" class="link" (click)="disableReminders()" data-testid="reminders-disable">
+        Désactiver les rappels
+      </button>
+    }
+  </fieldset>
+
+  @if (serverError(); as error) {
+    <p class="server-error" role="alert" data-testid="event-error">{{ error }}</p>
+  }
+
+  <div class="actions">
+    <button type="button" class="secondary" (click)="cancelled.emit()" data-testid="event-cancel">Annuler</button>
+    <button type="submit" [disabled]="submitting()" data-testid="event-submit">
+      @if (editing()) {
+        {{ submitting() ? 'Enregistrement…' : 'Enregistrer' }}
+      } @else {
+        {{ submitting() ? 'Création…' : "Créer l'événement" }}
+      }
+    </button>
+  </div>
+</form>

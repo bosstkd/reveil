@@ -1,0 +1,103 @@
+<main class="events">
+  <header>
+    <h1>Mes événements</h1>
+    <div class="header-actions">
+      <a routerLink="/parametres" data-testid="settings">Paramètres</a>
+      <button type="button" (click)="logout()" [disabled]="leaving()" data-testid="logout">Se déconnecter</button>
+    </div>
+  </header>
+  <p class="who">Connecté en tant que {{ auth.currentUser()?.email }}</p>
+
+  @if (creating()) {
+    <app-event-form (created)="onCreated($event)" (cancelled)="creating.set(false)" />
+  } @else if (!(period() === 'upcoming' && empty())) {
+    <button type="button" class="primary" (click)="startCreating()" data-testid="new-event">+ Nouvel événement</button>
+  }
+
+  @if (notice(); as message) {
+    <p class="notice" role="status" data-testid="created-notice">{{ message }}</p>
+  }
+  @if (actionError(); as message) {
+    <p class="error" role="alert" data-testid="action-error">{{ message }}</p>
+  }
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" [attr.aria-selected]="period() === 'upcoming'" [class.active]="period() === 'upcoming'"
+            (click)="select('upcoming')" data-testid="tab-upcoming">
+      À venir @if (events.upcoming().page >= 0) {({{ events.upcoming().total }})}
+    </button>
+    <button type="button" role="tab" [attr.aria-selected]="period() === 'past'" [class.active]="period() === 'past'"
+            (click)="select('past')" data-testid="tab-past">
+      Passés @if (events.past().page >= 0) {({{ events.past().total }})}
+    </button>
+  </nav>
+
+  @if (loadError()) {
+    <p class="error" role="alert" data-testid="load-error">Impossible de charger vos événements.</p>
+  }
+
+  @if (empty()) {
+    <div class="empty" data-testid="empty">
+      @if (period() === 'upcoming') {
+        <p>Aucun événement à venir.</p>
+        @if (!creating()) {
+          <button type="button" class="primary" (click)="startCreating()" data-testid="create-first">
+            Créer mon premier événement
+          </button>
+        }
+      } @else {
+        <p>Aucun événement passé.</p>
+      }
+    </div>
+  } @else if (current().items.length > 0) {
+    <ul data-testid="event-list">
+      @for (event of current().items; track event.id) {
+        <li [class.past]="event.past" data-testid="event-item">
+          @if (editingId() === event.id) {
+            <app-event-form [event]="event" (updated)="onUpdated($event)" (gone)="onGone()"
+                            (cancelled)="editingId.set(null)" />
+          } @else {
+            <a class="title" [routerLink]="['/evenements', event.id]" data-testid="item-link">
+              <strong data-testid="item-title">{{ event.title }}</strong>
+            </a>
+            <span class="when">
+              <span data-testid="item-date">{{ date(event) }}</span> à
+              <span data-testid="item-time">{{ time(event) }}</span>
+            </span>
+            <span class="remaining" data-testid="item-remaining">{{ remaining(event) }}</span>
+            @if (event.location) {
+              <span class="where">{{ event.location }}</span>
+            }
+            @if (confirmingId() === event.id) {
+              <div class="confirm" role="alertdialog" aria-label="Confirmer la suppression" data-testid="delete-confirm">
+                <p>Supprimer « {{ event.title }} » ? Ses rappels programmés seront aussi supprimés.</p>
+                <div class="item-actions">
+                  <button type="button" (click)="confirmingId.set(null)" [disabled]="deleting()"
+                          data-testid="delete-cancel">Annuler</button>
+                  <button type="button" class="danger" (click)="confirmDelete(event)" [disabled]="deleting()"
+                          data-testid="delete-confirm-button">
+                    {{ deleting() ? 'Suppression…' : 'Supprimer' }}
+                  </button>
+                </div>
+              </div>
+            } @else {
+              <div class="item-actions">
+                <button type="button" (click)="startEditing(event)" data-testid="item-edit">Modifier</button>
+                <button type="button" class="danger-outline" (click)="askDelete(event)" data-testid="item-delete">
+                  Supprimer
+                </button>
+              </div>
+            }
+          }
+        </li>
+      }
+    </ul>
+    @if (current().hasNext) {
+      <button type="button" (click)="loadMore()" [disabled]="loading()" data-testid="load-more">Afficher plus</button>
+    }
+  }
+
+  @if (loading()) {
+    <p class="loading" data-testid="loading">Chargement…</p>
+  }
+</main>

@@ -1,0 +1,77 @@
+package com.reveil.event;
+
+import com.reveil.auth.AuthenticatedUser;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+/** Événements de l'utilisateur connecté (routes protégées par SecurityConfig). */
+@RestController
+@RequestMapping("/api/events")
+public class EventController {
+
+    static final int DEFAULT_PAGE_SIZE = 20;
+    static final int MAX_PAGE_SIZE = 100;
+
+    private final EventService eventService;
+
+    public EventController(EventService eventService) {
+        this.eventService = eventService;
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public EventResponse create(@Valid @RequestBody CreateEventRequest request,
+                                @AuthenticationPrincipal AuthenticatedUser current) {
+        return eventService.create(current.id(), request);
+    }
+
+    /**
+     * {@code GET /api/events?when=upcoming|past&page=0&size=20} : liste paginée de l'utilisateur connecté.
+     */
+    @GetMapping
+    public EventPage list(@RequestParam(defaultValue = "upcoming") String when,
+                          @RequestParam(defaultValue = "0") int page,
+                          @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+                          @AuthenticationPrincipal AuthenticatedUser current) {
+        EventPeriod period = EventPeriod.parse(when).orElseThrow(() ->
+                new InvalidListQueryException("when", "Le filtre doit valoir « upcoming » ou « past »"));
+        if (page < 0) {
+            throw new InvalidListQueryException("page", "Le numéro de page doit être positif ou nul");
+        }
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new InvalidListQueryException("size", "La taille de page doit être comprise entre 1 et " + MAX_PAGE_SIZE);
+        }
+        return eventService.list(current.id(), period, page, size);
+    }
+
+    /** {@code GET /api/events/{id}} : détail d'un événement de l'utilisateur connecté (404 sinon). */
+    @GetMapping("/{id}")
+    public EventResponse get(@PathVariable String id, @AuthenticationPrincipal AuthenticatedUser current) {
+        return eventService.get(current.id(), id);
+    }
+
+    /** {@code PUT /api/events/{id}} : modification complète (403 si l'événement est à un autre utilisateur). */
+    @PutMapping("/{id}")
+    public EventResponse update(@PathVariable String id, @Valid @RequestBody CreateEventRequest request,
+                                @AuthenticationPrincipal AuthenticatedUser current) {
+        return eventService.update(current.id(), id, request);
+    }
+
+    /** {@code DELETE /api/events/{id}} : suppression avec rappel et photos (403 si à un autre utilisateur). */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable String id, @AuthenticationPrincipal AuthenticatedUser current) {
+        eventService.delete(current.id(), id);
+    }
+}

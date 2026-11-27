@@ -1,0 +1,18 @@
+# Dépendances, résultats de compilation, caches
+node_modules/
+target/
+dist/
+.angular/
+.expo/
+__pycache__/
+*.pyc
+coverage/
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+# Certificats / clés TLS (jamais dans le dépôt)
+*.pem
+*.key
+*.p12
+*.jks

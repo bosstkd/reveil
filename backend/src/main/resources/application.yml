@@ -1,0 +1,98 @@
+server:
+  port: ${PORT:8081}
+  # Derrière un relais (nginx) : X-Forwarded-Proto/For pris en compte (Tomcat RemoteIpValve, relais internes seulement).
+  forward-headers-strategy: native
+  # TLS terminé par l'API elle-même (facultatif ; sinon par le relais). Certificat et clé PEM fournis par
+  # l'environnement (chemins ou « classpath: »), jamais dans le dépôt.
+  ssl:
+    enabled: ${REVEIL_TLS_ENABLED:false}
+    certificate: ${REVEIL_TLS_CERTIFICATE:}
+    certificate-private-key: ${REVEIL_TLS_PRIVATE_KEY:}
+    enabled-protocols: TLSv1.3,TLSv1.2
+spring:
+  application:
+    name: reveil-backend
+  data:
+    mongodb:
+      # Par défaut localhost:27017 ; en déploiement : SPRING_DATA_MONGODB_URI
+      database: reveil
+      auto-index-creation: true
+  servlet:
+    multipart:
+      # Photos : la limite par fichier (15 Mo) est contrôlée par l'application (reveil.photos.max-size), fichier
+      # par fichier, pour qu'un envoi multiple ne soit pas rejeté en bloc ; ici, plafond de la requête entière
+      # (envoi multiple : 10 fichiers, les clients regroupent les fichiers sous ce plafond).
+      max-file-size: 60MB
+      max-request-size: 61MB
+  # Serveur SMTP (e-mails de réinitialisation du mot de passe) : hôte SPRING_MAIL_HOST (absent ou vide => e-mails
+  # seulement journalisés), identifiants SPRING_MAIL_USERNAME / SPRING_MAIL_PASSWORD fournis par l'environnement.
+  mail:
+    port: ${SPRING_MAIL_PORT:587}
+    properties:
+      mail.smtp.auth: ${REVEIL_MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${REVEIL_MAIL_STARTTLS:true}
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
+reveil:
+  jwt:
+    # Fourni par l'environnement (REVEIL_JWT_SECRET, >= 32 octets). Vide => clé éphémère.
+    secret: ${REVEIL_JWT_SECRET:}
+    # Durée de vie du jeton d'accès (court) ; renouvelé via /api/auth/refresh.
+    validity: PT15M
+  session:
+    # Durée d'inactivité maximale d'une session (jeton de rafraîchissement, glissante).
+    validity: P30D
+    # Fenêtre pendant laquelle l'ancien jeton de rafraîchissement reste accepté (requêtes concurrentes).
+    rotation-grace: PT1M
+  reminders:
+    # Rappel par défaut : 1 heure avant l'événement.
+    lead-time: PT1H
+    # Planificateur : chaque minute à la seconde 0 ; anticipation de quelques secondes.
+    cron: "0 * * * * *"
+    lookahead: PT5S
+  push:
+    fcm:
+      # Projet Firebase (REVEIL_FCM_PROJECT_ID). Vide => notifications seulement journalisées.
+      project-id: ${REVEIL_FCM_PROJECT_ID:}
+      # Contenu JSON du compte de service (REVEIL_FCM_CREDENTIALS_JSON) ; vide => GOOGLE_APPLICATION_CREDENTIALS.
+      credentials-json: ${REVEIL_FCM_CREDENTIALS_JSON:}
+  security:
+    # Requêtes en clair refusées (403). Désactivable pour le développement local en HTTP (REVEIL_REQUIRE_HTTPS=false).
+    require-https: ${REVEIL_REQUIRE_HTTPS:true}
+  accounts:
+    # Engagement RGPD : toutes les données d'un compte supprimé disparaissent sous 24 h.
+    purge-delay: PT24H
+    # Passe de contrôle (écritures encore en vol, reprise après échec) : demandes de plus de 10 min, toutes les 15 min.
+    purge-grace: PT10M
+    purge-cron: "0 */15 * * * *"
+  mail:
+    # Expéditeur des e-mails (REVEIL_MAIL_FROM).
+    from: ${REVEIL_MAIL_FROM:Reveil <no-reply@reveil.local>}
+    # Sans SMTP : journaliser aussi le corps (liens de réinitialisation compris). Environnements de test seulement.
+    log-content: ${REVEIL_MAIL_LOG_CONTENT:false}
+  password-reset:
+    # Validité d'un lien de réinitialisation (usage unique).
+    validity: PT1H
+    # Liens valides simultanément par compte ; au-delà les demandes sont ignorées (réponse identique).
+    max-active-links: 3
+    # Adresse publique de l'interface web (base du lien envoyé), ex. https://hote/test/reveil.
+    web-url: ${REVEIL_PUBLIC_URL:http://localhost:4200}
+    # Lien profond de l'application mobile.
+    mobile-url: reveil://reinitialiser-mot-de-passe
+  photos:
+    # Taille maximale d'une photo envoyée (le mobile compresse en JPEG, largeur <= 2048 px ; le web envoie l'original).
+    max-size: 15MB
+    # Nombre maximal de fichiers par envoi multiple (POST /api/events/{id}/photos/batch).
+    max-batch-files: 10
+    # Plus grand côté de la miniature générée côté serveur.
+    thumbnail-size: 400
+management:
+  health:
+    # Le serveur SMTP n'est pas une dépendance de démarrage : son indisponibilité ne rend pas l'API « DOWN ».
+    mail:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health

@@ -1,0 +1,36 @@
+<main class="card">
+  <h1>Se connecter</h1>
+  @if (accountDeleted) {
+    <p class="notice" role="status" data-testid="account-deleted">Votre compte et toutes vos données ont été supprimés.</p>
+  }
+  @if (passwordReset) {
+    <p class="notice" role="status" data-testid="password-reset-done">
+      Votre mot de passe a été modifié. Connectez-vous avec le nouveau mot de passe.
+    </p>
+  }
+
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <label for="email">E-mail</label>
+    <input id="email" type="email" formControlName="email" autocomplete="username" data-testid="email" />
+
+    <label for="password">Mot de passe</label>
+    <input
+      id="password"
+      type="password"
+      formControlName="password"
+      autocomplete="current-password"
+      data-testid="password"
+    />
+
+    @if (error(); as message) {
+      <p class="server-error" role="alert" data-testid="login-error">{{ message }}</p>
+    }
+
+    <button type="submit" [disabled]="submitting()" data-testid="submit">
+      {{ submitting() ? 'Connexion…' : 'Se connecter' }}
+    </button>
+  </form>
+
+  <p class="switch"><a routerLink="/mot-de-passe-oublie" data-testid="to-forgot-password">Mot de passe oublié ?</a></p>
+  <p class="switch">Pas encore de compte ? <a routerLink="/inscription" data-testid="to-register">Créer un compte</a></p>
+</main>

@@ -1,0 +1,14 @@
+.settings { max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+header { display: flex; justify-content: space-between; align-items: center; }
+header a { color: #3b5bdb; }
+.who { color: #666; }
+.danger-zone { margin-top: 2rem; padding: 1rem; border: 1px solid #ffc9c9; border-radius: 8px; background: #fff5f5; }
+.danger-zone h2 { margin-top: 0; color: #c92a2a; font-size: 1.1rem; }
+form { display: flex; flex-direction: column; gap: .4rem; }
+input { padding: .6rem; border: 1px solid #bbb; border-radius: 6px; font-size: 1rem; }
+.actions { display: flex; gap: .5rem; margin-top: .5rem; }
+button { padding: .5rem .9rem; border: 1px solid #3b5bdb; border-radius: 6px; background: #fff; color: #3b5bdb; cursor: pointer; }
+button:disabled { opacity: .6; }
+button.danger { background: #c92a2a; border-color: #c92a2a; color: #fff; }
+button.danger-outline { border-color: #c92a2a; color: #c92a2a; }
+.error { margin: 0; color: #c92a2a; font-size: .9rem; }
