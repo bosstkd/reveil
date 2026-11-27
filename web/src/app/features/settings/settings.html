@@ -5,10 +5,66 @@
   </header>
   <p class="who">Connecté en tant que {{ auth.currentUser()?.email }}</p>
 
+  <section class="notifications" aria-labelledby="notifications-title" data-testid="notifications">
+    <h2 id="notifications-title">Notifications du navigateur</h2>
+    <p>
+      Recevez vos rappels sur cet ordinateur, même quand l’onglet Reveil est fermé (le navigateur doit être ouvert).
+    </p>
+
+    @switch (webPush.status()) {
+      @case ('checking') {
+        <p class="muted" data-testid="notifications-checking">Vérification…</p>
+      }
+      @case ('unsupported') {
+        <p class="muted" data-testid="notifications-unsupported">
+          Ce navigateur ne permet pas d’afficher les notifications de Reveil. Utilisez une version récente de Chrome,
+          Edge, Firefox ou Safari (site en HTTPS).
+        </p>
+      }
+      @case ('denied') {
+        <div class="help" role="alert" data-testid="notifications-denied">
+          <p><strong>Les notifications sont bloquées pour Reveil dans ce navigateur.</strong></p>
+          <p>Pour les réactiver :</p>
+          <ol>
+            <li>cliquez sur l’icône à gauche de l’adresse du site (cadenas ou réglages) ;</li>
+            <li>dans « Notifications », choisissez « Autoriser » (Safari : Réglages › Sites web › Notifications) ;</li>
+            <li>rechargez cette page, puis cliquez sur « Activer les notifications ».</li>
+          </ol>
+        </div>
+      }
+      @case ('enabled') {
+        <p class="status on" data-testid="notifications-enabled">Notifications activées sur ce navigateur.</p>
+        <button
+          type="button"
+          (click)="disableNotifications()"
+          [disabled]="webPush.busy()"
+          data-testid="notifications-disable"
+        >
+          {{ webPush.busy() ? 'Désactivation…' : 'Désactiver les notifications' }}
+        </button>
+      }
+      @default {
+        <p class="status" data-testid="notifications-disabled">Notifications désactivées sur ce navigateur.</p>
+        <button
+          type="button"
+          class="primary"
+          (click)="enableNotifications()"
+          [disabled]="webPush.busy()"
+          data-testid="notifications-enable"
+        >
+          {{ webPush.busy() ? 'Activation…' : 'Activer les notifications' }}
+        </button>
+      }
+    }
+    @if (webPush.notice(); as notice) {
+      <p class="error" role="alert" data-testid="notifications-notice">{{ notice }}</p>
+    }
+  </section>
+
   <section class="danger-zone" aria-labelledby="delete-title">
     <h2 id="delete-title">Supprimer mon compte</h2>
     <p>
-      Votre compte, vos événements, vos rappels, vos photos et les appareils enregistrés pour les notifications
+      Votre compte, vos événements, vos rappels, vos photos et les appareils et navigateurs enregistrés pour les notifications
       seront supprimés définitivement (au plus tard sous 24 heures). Cette action est irréversible.
     </p>
 

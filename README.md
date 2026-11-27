@@ -28,6 +28,11 @@ Variables d'environnement de l'API :
 - `REVEIL_FCM_PROJECT_ID` — projet Firebase pour l'envoi des notifications push. Absent : envois seulement journalisés.
 - `REVEIL_FCM_CREDENTIALS_JSON` — contenu JSON du compte de service Firebase (rôle « Firebase Cloud Messaging API Admin »).
   Absent : `GOOGLE_APPLICATION_CREDENTIALS` (chemin d'un fichier) est utilisé. Jamais dans le dépôt.
+- `REVEIL_WEBPUSH_PUBLIC_KEY`, `REVEIL_WEBPUSH_PRIVATE_KEY` — paire VAPID des notifications du navigateur (base64url :
+  point P-256 non compressé de 65 octets / scalaire de 32 octets, ex. `npx web-push generate-vapid-keys`). Absentes :
+  paire générée au premier besoin et conservée en base (`web_push_vapid_keys`). La changer rend les abonnements
+  existants inutilisables (le web les recrée à l'ouverture des paramètres). `REVEIL_WEBPUSH_SUBJECT` — contact VAPID
+  (`mailto:` ou URL https, défaut `mailto:no-reply@reveil.local`).
 - `REVEIL_REQUIRE_HTTPS` — `true` par défaut : toute requête arrivée en clair est refusée (`403` « Connexion HTTPS
   requise », sauf `/actuator/health`). `false` uniquement en développement local.
 - `REVEIL_TLS_ENABLED`, `REVEIL_TLS_CERTIFICATE`, `REVEIL_TLS_PRIVATE_KEY` — TLS terminé par l'API elle-même
@@ -411,3 +416,35 @@ ouvert depuis l'e-mail (`Linking`).
   relaie `X-Forwarded-Proto` amont vers l'API.
 - Mobile : hors `__DEV__`, une `EXPO_PUBLIC_API_URL` non HTTPS fait échouer le démarrage (`resolveApiUrl`).
 - Web : appels relatifs → même schéma que la page.
+
+## Notifications du navigateur (Web Push, story 14)
+
+Page **Paramètres** du web : « Activer les notifications » demande l'autorisation du navigateur, installe le service
+worker `reveil-sw.js` (portée = base href, sans cache) et enregistre l'abonnement. Les rappels (mêmes échéances que
+sur mobile) s'affichent alors en notification système, onglet fermé (navigateur ouvert) ; clic → détail de
+l'événement. Autorisation refusée : la page explique comment la réactiver dans le navigateur. HTTPS requis (ou
+`localhost`). Déconnexion : le navigateur est désabonné, et côté serveur l'abonnement de la session fermée n'est
+plus utilisé.
+
+Collection `web_push_subscriptions` : `endpoint` (unique), `p256dh`, `auth`, `userId`, `sessionId`. Envoi
+`HttpWebPushSender` : contenu chiffré `aes128gcm` (RFC 8291), JWT VAPID ES256 (RFC 8292), `TTL` = début de
+l'événement, `Urgency: high`, `Topic` = id de l'événement ; 404/410 → abonnement supprimé.
+
+### `GET /api/push/web/public-key` (protégé)
+
+`200 { "publicKey": "<base64url>" }` — `applicationServerKey` de `pushManager.subscribe`.
+
+### `PUT /api/push/web/subscription` (protégé)
+
+```json
+{ "endpoint": "https://fcm.googleapis.com/fcm/send/...", "keys": { "p256dh": "...", "auth": "..." } }
+```
+
+(`PushSubscription.toJSON()`) → `204`, idempotent ; une adresse déjà connue est rattachée au compte et à la session
+courants. `400` (`errors[].field` = `endpoint`, `keys`, `keys.p256dh`, `keys.auth`) : adresse non HTTPS ou hors des
+services push autorisés (`reveil.push.web.allowed-hosts` : FCM, Mozilla, Microsoft, Apple), clés invalides.
+
+### `DELETE /api/push/web/subscription` (protégé)
+
+`{ "endpoint": "..." }` → `204` (idempotent ; sans effet sur l'abonnement d'un autre compte).
+

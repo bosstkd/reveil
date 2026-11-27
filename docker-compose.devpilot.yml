@@ -27,6 +27,11 @@ services:
       # fournis par l'environnement. Vides => les rappels sont planifiés normalement mais seulement journalisés.
       REVEIL_FCM_PROJECT_ID: ${REVEIL_FCM_PROJECT_ID:-}
       REVEIL_FCM_CREDENTIALS_JSON: ${REVEIL_FCM_CREDENTIALS_JSON:-}
+      # Notifications du navigateur (Web Push, VAPID) : paire de clés base64url fournie par l'environnement.
+      # Vides => paire générée au premier besoin et conservée dans MongoDB (volume mongo-data).
+      REVEIL_WEBPUSH_PUBLIC_KEY: ${REVEIL_WEBPUSH_PUBLIC_KEY:-}
+      REVEIL_WEBPUSH_PRIVATE_KEY: ${REVEIL_WEBPUSH_PRIVATE_KEY:-}
+      REVEIL_WEBPUSH_SUBJECT: ${REVEIL_WEBPUSH_SUBJECT:-mailto:no-reply@reveil.local}
       # HTTPS exigé par l'API (403 en clair) d'après X-Forwarded-Proto relayé par "web". Le TLS de cet
       # environnement est terminé en amont, hors de nos conteneurs : désactivé par défaut ici, à activer
       # (true) quand le relais public transmet « X-Forwarded-Proto: https ».

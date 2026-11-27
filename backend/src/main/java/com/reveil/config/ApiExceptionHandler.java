@@ -10,6 +10,7 @@ import com.reveil.passwordreset.InvalidResetTokenException;
 import com.reveil.photo.InvalidPhotoException;
 import com.reveil.photo.PhotoNotFoundException;
 import com.reveil.session.InvalidRefreshTokenException;
+import com.reveil.webpush.InvalidWebPushSubscriptionException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,6 +82,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidPhotoException.class)
     public ResponseEntity<Map<String, Object>> invalidPhoto(InvalidPhotoException e) {
         return body(e.getStatus(), e.getMessage(), List.of(new FieldError("file", e.getMessage())));
+    }
+
+    @ExceptionHandler(InvalidWebPushSubscriptionException.class)
+    public ResponseEntity<Map<String, Object>> invalidWebPush(InvalidWebPushSubscriptionException e) {
+        return body(HttpStatus.BAD_REQUEST, "Données invalides", List.of(new FieldError(e.getField(), e.getMessage())));
     }
 
     /** Requête multipart au-delà de spring.servlet.multipart.max-file-size / max-request-size. */

@@ -6,6 +6,8 @@ import com.reveil.event.Event;
 import com.reveil.push.PushMessage;
 import com.reveil.push.PushResult;
 import com.reveil.push.PushSender;
+import com.reveil.webpush.WebPushMessage;
+import com.reveil.webpush.WebPushService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,7 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-/** Envoi des rappels échus aux appareils du propriétaire de l'événement. */
+/** Envoi des rappels échus aux appareils (FCM) et aux navigateurs abonnés (Web Push) du propriétaire de l'événement. */
 @Service
 public class ReminderService {
 
@@ -33,19 +35,22 @@ public class ReminderService {
     private final ReminderQueue queue;
     private final DeviceService devices;
     private final PushSender push;
+    private final WebPushService webPush;
     private final ReminderSettings settings;
     private final Clock clock;
 
     @Autowired
-    public ReminderService(ReminderQueue queue, DeviceService devices, PushSender push, ReminderSettings settings) {
-        this(queue, devices, push, settings, Clock.systemUTC());
+    public ReminderService(ReminderQueue queue, DeviceService devices, PushSender push, WebPushService webPush,
+                           ReminderSettings settings) {
+        this(queue, devices, push, webPush, settings, Clock.systemUTC());
     }
 
-    ReminderService(ReminderQueue queue, DeviceService devices, PushSender push, ReminderSettings settings,
-                    Clock clock) {
+    ReminderService(ReminderQueue queue, DeviceService devices, PushSender push, WebPushService webPush,
+                    ReminderSettings settings, Clock clock) {
         this.queue = queue;
         this.devices = devices;
         this.push = push;
+        this.webPush = webPush;
         this.settings = settings;
         this.clock = clock;
     }
@@ -95,6 +100,15 @@ public class ReminderService {
             } else if (result == PushResult.FAILED) {
                 log.warn("Rappel de l'événement {} non remis à un appareil", event.getId());
             }
+        }
+        // Navigateurs (story 14) : affiché par le service worker, onglet fermé ; clic → détail de l'événement.
+        // Un échec d'envoi n'empêche pas le traitement des autres rappels (le rappel reste marqué envoyé).
+        try {
+            webPush.notify(event.getOwnerId(), new WebPushMessage(title, body, "evenements/" + event.getId(),
+                    "reminder-" + event.getId(), Map.of("type", TYPE, "eventId", event.getId()), event.getStartsAt(),
+                    event.getId()));
+        } catch (RuntimeException e) {
+            log.warn("Rappel de l'événement {} non envoyé aux navigateurs : {}", event.getId(), e.toString());
         }
     }
 

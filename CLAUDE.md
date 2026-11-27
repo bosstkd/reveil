@@ -6,6 +6,7 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
 - `backend/` — API REST Spring Boot 3.5 / Java 17 / MongoDB. Paquets par domaine sous `com.reveil` :
   `auth` (JWT + sessions), `session`, `user`, `event` (CRUD, rappels configurés), `reminder` (planificateur, file,
   envoi), `push` (FCM HTTP v1, ou journalisation sans config), `device` (jetons FCM), `photo` (GridFS + miniatures),
+  `webpush` (story 14 : abonnements navigateur, VAPID, chiffrement RFC 8291, `HttpWebPushSender`),
   `account` (suppression du compte + purge), `passwordreset` (mot de passe oublié), `mail` (`EmailSender` : SMTP
 `spring.mail.*` ou journalisation sans hôte), `config` (sécurité, HTTPS, en-têtes, erreurs JSON
   `{message, errors[{field,message}]}`).
@@ -37,7 +38,7 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
   préchargées) ; mobile `src/screens/PhotoViewer.tsx` (`Modal` + `FlatList` paginée, confirmation `Alert`).
 
 - Suppression de compte (story 12) : `DELETE /api/account` `{password}` → 204 / 403 (jamais 401 : déclencherait le
-  rafraîchissement client). Marqueur `account_deletions` → suppression user → `AccountPurger.purge` (sessions, devices,
+  rafraîchissement client). Marqueur `account_deletions` → suppression user → `AccountPurger.purge` (sessions, devices, web_push_subscriptions,
   events, photos, GridFS `metadata.ownerId`) ; `AccountPurgeScheduler` rejoue après `purge-grace` puis clôt. Toute
   nouvelle collection liée à un utilisateur **doit** être ajoutée à `AccountPurger` (+ `AccountIntegrationTest`).
 - Mot de passe oublié (story 13) : `POST /api/auth/password-reset/request` → 202, même message que le compte existe
@@ -48,6 +49,16 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
   (`src/auth/resetLink.ts`, `Linking`). Messages `RESET_REQUESTED_MESSAGE`/`INVALID_RESET_LINK_MESSAGE` dupliqués
   (API, `web/.../auth.models.ts`, `mobile/src/auth/authApi.ts`) : garder identiques. Tests : `@MockitoBean EmailSender`
   + `verify(timeout)`.
+- Notifications web (story 14) : `webpush/` (JDK seule : ECDH/AES-GCM/ES256, pas de bibliothèque). `ReminderService`
+  envoie aux appareils FCM puis `WebPushService.notify` (abonnements liés à la session, comme `device_tokens` ;
+  404/410 → supprimé ; exception rattrapée). Endpoints `GET /api/push/web/public-key`, `PUT|DELETE
+  /api/push/web/subscription` ; adresse limitée aux hôtes `reveil.push.web.allowed-hosts` en HTTPS (anti-SSRF).
+  VAPID : `REVEIL_WEBPUSH_*` ou paire générée et conservée en base (`VapidKeyStore`, `web_push_vapid_keys`).
+  Web : `core/notifications` (`WebPushService` signals, `BROWSER_PUSH` = API navigateur simulable, `FakeBrowserPush`
+  dans `testing.ts`), section des Paramètres ; service worker **sans cache** `public/reveil-sw.js` (testé par
+  `service-worker.spec.ts`, lecture via `node:fs`, types dans `src/node-test-shims.d.ts`). Déconnexion /
+  suppression du compte → `forgetBrowser()`. Contenu envoyé : `{title, body, url (relative à la portée), tag, data}`.
+  Tests backend : `@MockitoBean WebPushSender`, `TestBrowser` (déchiffrement), vecteur RFC 8291.
 - HTTPS : `reveil.security.require-https` (défaut true, `HttpsEnforcementFilter` → 403 en clair ; tests : false via
   `src/test/resources/application.properties`, vérifié par `SecurityHeadersTest`/`HttpsIntegrationTest` avec TLS réel
   autosigné). TLS natif facultatif (`REVEIL_TLS_*`, PEM). `forward-headers-strategy: native`. Compose : false.
@@ -68,4 +79,5 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
 · 8 détail · 9 choix des rappels (jusqu'à 3 délais, désactivation, envoi unique) · 10 import galerie (mobile 10 max,
 web glisser-déposer JPEG/PNG/HEIC ≤ 15 Mo, `photos/batch`) · 11 visionneuse plein écran + suppression de photo
 · 12 suppression du compte (RGPD, paramètres web/mobile), HTTPS obligatoire, en-têtes de sécurité
-· 13 mot de passe oublié (lien e-mail 1 h, usage unique, écrans web/mobile).
+· 13 mot de passe oublié (lien e-mail 1 h, usage unique, écrans web/mobile) · 14 notifications navigateur (Web Push,
+service worker, activation dans les paramètres web).

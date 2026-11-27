@@ -57,6 +57,15 @@ reveil:
       project-id: ${REVEIL_FCM_PROJECT_ID:}
       # Contenu JSON du compte de service (REVEIL_FCM_CREDENTIALS_JSON) ; vide => GOOGLE_APPLICATION_CREDENTIALS.
       credentials-json: ${REVEIL_FCM_CREDENTIALS_JSON:}
+    # Notifications du navigateur (Web Push, VAPID). Clés base64url fournies par l'environnement ; absentes =>
+    # paire générée au premier besoin et conservée en base (collection web_push_vapid_keys).
+    web:
+      public-key: ${REVEIL_WEBPUSH_PUBLIC_KEY:}
+      private-key: ${REVEIL_WEBPUSH_PRIVATE_KEY:}
+      # Contact transmis aux services push (mailto: ou URL https).
+      subject: ${REVEIL_WEBPUSH_SUBJECT:mailto:no-reply@reveil.local}
+      # Services push autorisés pour les adresses d'abonnement (hôte ou sous-domaine, HTTPS uniquement).
+      allowed-hosts: fcm.googleapis.com,android.googleapis.com,push.services.mozilla.com,notify.windows.com,push.apple.com
   security:
     # Requêtes en clair refusées (403). Désactivable pour le développement local en HTTP (REVEIL_REQUIRE_HTTPS=false).
     require-https: ${REVEIL_REQUIRE_HTTPS:true}

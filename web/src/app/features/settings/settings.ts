@@ -1,19 +1,24 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AccountService, INCORRECT_PASSWORD_MESSAGE } from '../../core/account/account.service';
 import { AuthService } from '../../core/auth/auth.service';
+import { WebPushService } from '../../core/notifications/web-push.service';
 
-/** Paramètres du compte : suppression définitive du compte et de toutes ses données (RGPD). */
+/**
+ * Paramètres du compte : notifications des rappels dans le navigateur (story 14) et suppression définitive
+ * du compte et de toutes ses données (RGPD).
+ */
 @Component({
   selector: 'app-settings',
   imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './settings.html',
   styleUrl: './settings.css',
 })
-export class Settings {
+export class Settings implements OnInit {
   protected readonly auth = inject(AuthService);
+  protected readonly webPush = inject(WebPushService);
   private readonly account = inject(AccountService);
   private readonly router = inject(Router);
 
@@ -25,6 +30,18 @@ export class Settings {
   protected readonly form = inject(NonNullableFormBuilder).group({
     password: ['', Validators.required],
   });
+
+  ngOnInit(): void {
+    void this.webPush.refresh();
+  }
+
+  protected enableNotifications(): void {
+    void this.webPush.enable();
+  }
+
+  protected disableNotifications(): void {
+    void this.webPush.disable();
+  }
 
   protected startDeletion(): void {
     this.confirming.set(true);
@@ -49,7 +66,10 @@ export class Settings {
     this.deleting.set(true);
     this.error.set(null);
     this.account.deleteAccount(password).subscribe({
-      next: () => this.router.navigateByUrl('/connexion?compte=supprime'),
+      next: () => {
+        void this.webPush.forgetBrowser();
+        this.router.navigateByUrl('/connexion?compte=supprime');
+      },
       error: (err: HttpErrorResponse) => {
         this.deleting.set(false);
         this.form.reset();

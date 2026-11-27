@@ -16,6 +16,8 @@ import com.reveil.event.Event;
 import com.reveil.push.PushMessage;
 import com.reveil.push.PushResult;
 import com.reveil.push.PushSender;
+import com.reveil.webpush.WebPushMessage;
+import com.reveil.webpush.WebPushService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -34,6 +36,7 @@ class ReminderServiceTest {
     ReminderQueue queue;
     DeviceService devices;
     PushSender push;
+    WebPushService webPush;
     ReminderService service;
 
     @BeforeEach
@@ -41,7 +44,8 @@ class ReminderServiceTest {
         queue = mock(ReminderQueue.class);
         devices = mock(DeviceService.class);
         push = mock(PushSender.class);
-        service = new ReminderService(queue, devices, push, new ReminderSettings(Duration.ofHours(1), Duration.ofSeconds(5)),
+        webPush = mock(WebPushService.class);
+        service = new ReminderService(queue, devices, push, webPush, new ReminderSettings(Duration.ofHours(1), Duration.ofSeconds(5)),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -145,5 +149,44 @@ class ReminderServiceTest {
                 .isEqualTo("Commence dans 1 jour, le 26/11 à 19:30");
         assertThat(ReminderService.body(event("e", NOW.plus(Duration.ofHours(26)), null), NOW))
                 .isEqualTo("Commence dans 1 jour 2 h, le 26/11 à 21:30");
+    }
+
+    @Test
+    void theReminderIsAlsoSentToTheOwnerBrowsers() {
+        when(queue.claimNextDue(any(), any()))
+                .thenReturn(Optional.of(event("e1", NOW.plus(Duration.ofHours(1)), "Olympia")), Optional.empty());
+        when(devices.activeDevicesOf("u1")).thenReturn(List.of());
+
+        assertThat(service.sendDueReminders()).isEqualTo(1);
+
+        ArgumentCaptor<WebPushMessage> sent = ArgumentCaptor.forClass(WebPushMessage.class);
+        verify(webPush).notify(eq("u1"), sent.capture());
+        WebPushMessage m = sent.getValue();
+        assertThat(m.title()).isEqualTo("Rappel : Concert");
+        assertThat(m.body()).isEqualTo("Commence dans 1 h, à 20:30 · Olympia");
+        assertThat(m.url()).isEqualTo("evenements/e1");
+        assertThat(m.tag()).isEqualTo("reminder-e1");
+        assertThat(m.topic()).isEqualTo("e1");
+        assertThat(m.data()).containsEntry("eventId", "e1").containsEntry("type", ReminderService.TYPE);
+        assertThat(m.expiresAt()).isEqualTo(NOW.plus(Duration.ofHours(1)));
+    }
+
+    @Test
+    void aBrowserFailureDoesNotStopTheOtherReminders() {
+        when(queue.claimNextDue(any(), any())).thenReturn(
+                Optional.of(event("e1", NOW.plus(Duration.ofHours(1)), null)),
+                Optional.of(event("e2", NOW.plus(Duration.ofHours(1)), null)), Optional.empty());
+        when(webPush.notify(any(), any())).thenThrow(new IllegalStateException("panne")).thenReturn(1);
+
+        assertThat(service.sendDueReminders()).isEqualTo(2);
+        verify(webPush, times(2)).notify(eq("u1"), any());
+    }
+
+    @Test
+    void nothingIsSentToBrowsersForAnAlreadyStartedEvent() {
+        when(queue.claimNextDue(any(), any()))
+                .thenReturn(Optional.of(event("e1", NOW.minusSeconds(60), null)), Optional.empty());
+        service.sendDueReminders();
+        verify(webPush, never()).notify(any(), any());
     }
 }

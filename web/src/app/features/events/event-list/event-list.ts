@@ -13,6 +13,7 @@ import {
 } from '../../../core/events/event.models';
 import { EventService } from '../../../core/events/event.service';
 import { EventForm } from '../event-form/event-form';
+import { WebPushService } from '../../../core/notifications/web-push.service';
 
 /** Rafraîchissement du temps restant affiché. */
 const CLOCK_TICK_MS = 60_000;
@@ -31,6 +32,7 @@ export class EventList implements OnInit, OnDestroy {
   protected readonly auth = inject(AuthService);
   protected readonly events = inject(EventService);
   private readonly router = inject(Router);
+  private readonly webPush = inject(WebPushService);
   protected readonly leaving = signal(false);
   protected readonly creating = signal(false);
   protected readonly loading = signal(false);
@@ -148,6 +150,7 @@ export class EventList implements OnInit, OnDestroy {
 
   protected logout(): void {
     this.leaving.set(true);
+    void this.webPush.forgetBrowser(); // ce navigateur ne reçoit plus les rappels de ce compte
     this.auth.logout().subscribe(() => {
       this.events.clear();
       this.router.navigateByUrl('/connexion');

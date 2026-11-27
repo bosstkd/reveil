@@ -68,6 +68,7 @@ class AccountIntegrationTest {
         devices.deleteAll();
         deletions.deleteAll();
         mongo.getCollection("password_reset_tokens").deleteMany(new Document());
+        mongo.getCollection("web_push_subscriptions").deleteMany(new Document());
         mongo.getCollection("fs.files").deleteMany(new Document());
         mongo.getCollection("fs.chunks").deleteMany(new Document());
     }
@@ -82,7 +83,7 @@ class AccountIntegrationTest {
                 node.get("refreshToken").asText());
     }
 
-    /** Événement avec rappels, une photo (original + miniature GridFS) et un appareil enregistré. */
+    /** Événement avec rappels, une photo (original + miniature GridFS), un appareil et un navigateur abonné. */
     private String populate(Account account, String deviceToken) throws Exception {
         String body = mvc.perform(post("/api/events").header("Authorization", account.bearer())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -99,6 +100,11 @@ class AccountIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"token\":\"" + deviceToken + "\",\"platform\":\"ANDROID\"}"))
                 .andExpect(status().is2xxSuccessful());
+        mvc.perform(put("/api/push/web/subscription").header("Authorization", account.bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(com.reveil.webpush.WebPushTestData.subscription(
+                                "https://fcm.googleapis.com/fcm/send/" + deviceToken))))
+                .andExpect(status().isNoContent());
         return eventId;
     }
 
@@ -166,6 +172,7 @@ class AccountIntegrationTest {
         assertThat(gridFsFilesOf(alice.id())).isZero();
         assertThat(devices.findByUserId(alice.id())).isEmpty();
         assertThat(devices.findByToken("fcm-alice")).isEmpty();
+        assertThat(webPushOf(alice.id())).isZero();
         assertThat(mongo.getCollection("password_reset_tokens").countDocuments(new Document("userId", alice.id())))
                 .isZero();
         assertThat(deletions.findById(alice.id())).isPresent();
@@ -186,7 +193,12 @@ class AccountIntegrationTest {
         assertThat(mongo.getCollection("photos").countDocuments(new Document("ownerId", bob.id()))).isEqualTo(1);
         assertThat(gridFsFilesOf(bob.id())).isEqualTo(2);
         assertThat(devices.findByToken("fcm-bob")).isPresent();
+        assertThat(webPushOf(bob.id())).isEqualTo(1);
         mvc.perform(get("/api/auth/me").header("Authorization", bob.bearer())).andExpect(status().isOk());
+    }
+
+    private long webPushOf(String userId) {
+        return mongo.getCollection("web_push_subscriptions").countDocuments(new Document("userId", userId));
     }
 
     @Test
@@ -201,6 +213,8 @@ class AccountIntegrationTest {
         mongo.getCollection("photos").insertOne(new Document("eventId", "x").append("ownerId", alice.id()));
         mongo.getCollection("device_tokens").insertOne(new Document("token", "fcm-late").append("userId", alice.id()));
         mongo.getCollection("password_reset_tokens").insertOne(new Document("_id", "late").append("userId", alice.id()));
+        mongo.getCollection("web_push_subscriptions").insertOne(new Document("endpoint", "https://fcm.googleapis.com/late")
+                .append("userId", alice.id()));
 
         assertThat(accounts.purgePending()).isEqualTo(1);
 
@@ -209,6 +223,7 @@ class AccountIntegrationTest {
         assertThat(mongo.getCollection("device_tokens").countDocuments(new Document("userId", alice.id()))).isZero();
         assertThat(mongo.getCollection("password_reset_tokens").countDocuments(new Document("userId", alice.id())))
                 .isZero();
+        assertThat(webPushOf(alice.id())).isZero();
         assertThat(deletions.count()).isZero();
         assertThat(mongo.getCollection("events").countDocuments(new Document("ownerId", bob.id()))).isEqualTo(1);
         assertThat(accounts.purgePending()).isZero();
