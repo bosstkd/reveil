@@ -284,6 +284,31 @@ Galerie de l'événement, la plus récente d'abord (`404` si l'événement n'est
 
 Octets de l'image d'origine / de la miniature (`Cache-Control: private, max-age=2592000`). `404` sinon.
 
+Accès réservé au propriétaire : URL **authentifiées** (en-tête `Authorization: Bearer`, jamais de jeton dans l'URL),
+`401` sans jeton, `404` pour la photo d'un autre utilisateur (contrôle `photoId` + `eventId` + `ownerId`, pas de fuite
+d'existence).
+
+### `DELETE /api/events/{id}/photos/{photoId}` (protégé, story 11)
+
+`204`. Retire atomiquement les métadonnées (`findAndRemove` : la photo disparaît aussitôt de la galerie) puis
+l'original et la miniature dans GridFS (un échec GridFS est journalisé, sans effet visible). `404 « Photo introuvable »`
+si elle n'existe pas, est déjà supprimée ou appartient à un autre utilisateur (les clients traitent `404` comme
+« déjà supprimée »).
+
+### Visionneuse et suppression (story 11)
+
+- **Web** : clic (ou Entrée) sur une miniature → visionneuse plein écran (`PhotoViewer`, `role="dialog"`) : photo
+  d'origine téléchargée avec le jeton (URL `blob:`, libérée à la fermeture/suppression), miniature floutée en aperçu
+  pendant le chargement, préchargement des seules voisines. Défilement : boutons ‹ ›, flèches ←/→, glissé (≥ 50 px) ;
+  Échap ou ✕ ferme. « Supprimer » → confirmation en place → `DELETE` ; la suivante prend la place, galerie mise à jour
+  sans rechargement (« Photo supprimée. »), visionneuse fermée s'il n'en reste aucune.
+- **Mobile** : appui sur une miniature → `Modal` plein écran, `FlatList` horizontale paginée (virtualisée : la photo
+  courante et ses voisines), boutons ‹ ›, compteur « 2 / 5 », original affiché par-dessus la miniature floutée
+  (en-tête `Authorization`). « Supprimer » → confirmation `Alert` → `DELETE`, même comportement que le web.
+- **Performance (50 photos)** : la galerie ne télécharge que les miniatures JPEG (≤ 400 px, quelques dizaines de Ko,
+  cache privé 30 j) ; les originaux ne sont chargés qu'à l'ouverture de la visionneuse. Test d'intégration : liste +
+  50 miniatures servies en < 3 s.
+
 ### Mobile
 
 - Un appui sur un événement de la liste ouvre son détail : galerie (miniatures) et bouton « Prendre une photo ».

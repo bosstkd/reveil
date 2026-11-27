@@ -29,6 +29,10 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
   ≤ 10, traitement fichier par fichier → `{photos, rejected}`). Limite multipart Spring 60 Mo = nginx 61m (garder
   alignés). Mobile : tout est recompressé en JPEG (`expo-image-manipulator`). Web : HEIC converti en JPEG côté
   navigateur (`heic-to`, import dynamique dans `HeicConverter`, simulé dans les tests) ; règles `photo.models.ts`.
+- Visionneuse / suppression (story 11) : `DELETE .../photos/{photoId}` (`deleteByIdAndEventIdAndOwnerId` = findAndRemove,
+  puis GridFS) ; 404 pour une photo d'autrui ou déjà supprimée (clients : 404 = supprimée). Lecture : URL
+  authentifiées (Bearer), pas d'URL signée. Web `features/events/photo-viewer` (originaux en `blob:`, voisines
+  préchargées) ; mobile `src/screens/PhotoViewer.tsx` (`Modal` + `FlatList` paginée, confirmation `Alert`).
 
 ## Commandes
 - Tout vérifier : `./devpilot-verify.sh` (backend `mvn test`, web `ng test` + build prod, mobile `jest` + `tsc`).
@@ -41,4 +45,4 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
 ## Historique des stories
 1–3 compte / connexion / sessions · 4 liste des événements · 5 rappel push 1 h avant · 6 photos · 7 modifier/supprimer
 · 8 détail · 9 choix des rappels (jusqu'à 3 délais, désactivation, envoi unique) · 10 import galerie (mobile 10 max,
-web glisser-déposer JPEG/PNG/HEIC ≤ 15 Mo, `photos/batch`).
+web glisser-déposer JPEG/PNG/HEIC ≤ 15 Mo, `photos/batch`) · 11 visionneuse plein écran + suppression de photo.

@@ -285,4 +285,89 @@ class PhotoIntegrationTest {
                 .andExpect(jsonPath("$.rejected[0].message").value("Photo trop volumineuse (maximum 15 Mo)"));
         assertThat(photos.count()).isEqualTo(1);
     }
+
+    private String upload(String token, String eventId, byte[] jpeg) throws Exception {
+        String body = mvc.perform(multipart("/api/events/" + eventId + "/photos").file(file(jpeg, "image/jpeg"))
+                        .header("Authorization", token))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return json.readTree(body).get("id").asText();
+    }
+
+    @Test
+    void ownerDeletesAPhotoItsFilesAreRemovedAndItIsNoLongerServed() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String eventId = createEvent(alice);
+        String removed = upload(alice, eventId, TestImages.jpeg(64, 48));
+        String kept = upload(alice, eventId, TestImages.jpeg(32, 24));
+        assertThat(mongo.getCollection("fs.files").countDocuments()).isEqualTo(4);
+        String base = "/api/events/" + eventId + "/photos/";
+
+        mvc.perform(delete(base + removed).header("Authorization", alice)).andExpect(status().isNoContent());
+
+        assertThat(photos.findAll()).singleElement().satisfies(p -> assertThat(p.getId()).isEqualTo(kept));
+        assertThat(mongo.getCollection("fs.files").countDocuments()).isEqualTo(2);
+        mvc.perform(get("/api/events/" + eventId + "/photos").header("Authorization", alice))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(kept));
+        mvc.perform(get(base + removed + "/content").header("Authorization", alice)).andExpect(status().isNotFound());
+        mvc.perform(get(base + removed + "/thumbnail").header("Authorization", alice)).andExpect(status().isNotFound());
+        // Déjà supprimée : 404 (idempotence côté client : la photo n'est plus là).
+        mvc.perform(delete(base + removed).header("Authorization", alice)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void onlyTheOwnerCanReadOrDeleteAPhoto() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String bob = tokenFor("bob@example.com");
+        String eventId = createEvent(alice);
+        String bobsEvent = createEvent(bob);
+        String photoId = upload(alice, eventId, TestImages.jpeg(64, 48));
+        String base = "/api/events/" + eventId + "/photos/" + photoId;
+
+        mvc.perform(get(base + "/content")).andExpect(status().isUnauthorized());
+        mvc.perform(get(base + "/thumbnail")).andExpect(status().isUnauthorized());
+        mvc.perform(delete(base)).andExpect(status().isUnauthorized());
+        mvc.perform(get(base + "/content").header("Authorization", bob)).andExpect(status().isNotFound());
+        mvc.perform(get(base + "/thumbnail").header("Authorization", bob)).andExpect(status().isNotFound());
+        mvc.perform(delete(base).header("Authorization", bob)).andExpect(status().isNotFound());
+        // La photo n'est pas non plus atteignable en la rattachant à un événement de Bob.
+        mvc.perform(delete("/api/events/" + bobsEvent + "/photos/" + photoId).header("Authorization", bob))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/events/" + bobsEvent + "/photos/" + photoId).header("Authorization", alice))
+                .andExpect(status().isNotFound());
+
+        assertThat(photos.count()).isEqualTo(1);
+        assertThat(mongo.getCollection("fs.files").countDocuments()).isEqualTo(2);
+        mvc.perform(get(base + "/content").header("Authorization", alice)).andExpect(status().isOk());
+    }
+
+    @Test
+    void galleryOfFiftyPhotosIsServedWithLightThumbnailsInUnderThreeSeconds() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String eventId = createEvent(alice);
+        byte[] jpeg = TestImages.jpeg(2048, 1536);
+        for (int batch = 0; batch < 5; batch++) {
+            var request = multipart("/api/events/" + eventId + "/photos/batch");
+            for (int i = 0; i < 10; i++) {
+                request.file(part("photo" + i + ".jpg", jpeg, "image/jpeg"));
+            }
+            mvc.perform(request.header("Authorization", alice)).andExpect(jsonPath("$.photos.length()").value(10));
+        }
+
+        Instant start = Instant.now();
+        String list = mvc.perform(get("/api/events/" + eventId + "/photos").header("Authorization", alice))
+                .andExpect(jsonPath("$.length()").value(50))
+                .andReturn().getResponse().getContentAsString();
+        long thumbnailBytes = 0;
+        for (JsonNode photo : json.readTree(list)) {
+            byte[] thumb = mvc.perform(get(photo.get("thumbnailUrl").asText()).header("Authorization", alice))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsByteArray();
+            thumbnailBytes += thumb.length;
+        }
+        assertThat(Duration.between(start, Instant.now())).isLessThan(Duration.ofSeconds(3));
+        // Les miniatures pèsent une fraction des originaux : la galerie ne télécharge jamais les photos entières.
+        assertThat(thumbnailBytes).isLessThan(50L * jpeg.length / 5);
+    }
 }

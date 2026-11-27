@@ -1,0 +1,47 @@
+<div class="viewer" role="dialog" aria-modal="true" aria-label="Photo en plein écran" data-testid="photo-viewer"
+     (pointerdown)="onPointerDown($event)" (pointerup)="onPointerUp($event)">
+  <header class="bar">
+    <span class="counter" data-testid="viewer-counter">{{ position() + 1 }} / {{ photos().length }}</span>
+    <div class="tools">
+      <button #closeButton type="button" class="ghost" (click)="close()" aria-label="Fermer la visionneuse"
+              data-testid="viewer-close">✕</button>
+    </div>
+  </header>
+
+  @if (current(); as photo) {
+    <figure class="stage">
+      @if (full()[photo.id]; as src) {
+        <img [src]="src" alt="Photo de l'événement" draggable="false" data-testid="viewer-image" />
+      } @else if (failed()[photo.id]) {
+        <p class="error" data-testid="viewer-image-error">{{ contentFailed }}</p>
+      } @else {
+        @if (thumbs()[photo.id]; as preview) {
+          <img [src]="preview" alt="Aperçu de la photo" class="preview" draggable="false" data-testid="viewer-preview" />
+        }
+        <p class="loading" role="status" data-testid="viewer-loading">Chargement…</p>
+      }
+    </figure>
+
+    <button type="button" class="nav prev" (click)="previous()" [disabled]="!hasPrevious()"
+            aria-label="Photo précédente" data-testid="viewer-previous">‹</button>
+    <button type="button" class="nav next" (click)="next()" [disabled]="!hasNext()"
+            aria-label="Photo suivante" data-testid="viewer-next">›</button>
+
+    <footer class="bar bottom">
+      @if (confirming()) {
+        <div class="confirm" role="alertdialog" aria-label="Confirmer la suppression" data-testid="viewer-delete-confirm">
+          <span>Supprimer cette photo ? Cette action est définitive.</span>
+          <button type="button" class="ghost" (click)="cancelDelete()" [disabled]="deleting()"
+                  data-testid="viewer-delete-cancel">Annuler</button>
+          <button type="button" class="danger" (click)="confirmDelete()" [disabled]="deleting()"
+                  data-testid="viewer-delete-confirm-button">{{ deleting() ? 'Suppression…' : 'Supprimer' }}</button>
+        </div>
+      } @else {
+        <button type="button" class="danger" (click)="askDelete()" data-testid="viewer-delete">🗑️ Supprimer</button>
+      }
+      @if (error(); as message) {
+        <p class="error" role="alert" data-testid="viewer-error">{{ message }}</p>
+      }
+    </footer>
+  }
+</div>

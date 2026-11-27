@@ -32,6 +32,7 @@ import {
 } from '../../../core/photos/photo.models';
 import { PhotoService } from '../../../core/photos/photo.service';
 import { EventForm } from '../event-form/event-form';
+import { PhotoViewer } from '../photo-viewer/photo-viewer';
 
 /** Rafraîchissement du temps restant affiché. */
 export const CLOCK_TICK_MS = 60_000;
@@ -48,11 +49,12 @@ function draggingFiles(event: DragEvent): boolean {
 /**
  * Détail d'un événement (`/evenements/:id`) : titre, date, heure, lieu, temps restant, rappels configurés
  * et galerie de miniatures ; accès à la modification et à l'import de photos (sélecteur multiple ou
- * glisser-déposer ; JPEG, PNG ou HEIC ≤ 15 Mo, HEIC convertis en JPEG avant l'envoi).
+ * glisser-déposer ; JPEG, PNG ou HEIC ≤ 15 Mo, HEIC convertis en JPEG avant l'envoi). Un clic sur une miniature
+ * ouvre la visionneuse plein écran (défilement, suppression après confirmation).
  */
 @Component({
   selector: 'app-event-detail',
-  imports: [EventForm, RouterLink],
+  imports: [EventForm, PhotoViewer, RouterLink],
   templateUrl: './event-detail.html',
   styleUrl: './event-detail.css',
   host: {
@@ -82,6 +84,8 @@ export class EventDetail implements OnInit, OnDestroy {
   protected readonly uploadErrors = signal<string[]>([]);
   /** Des fichiers sont glissés au-dessus de la zone de dépôt. */
   protected readonly dragging = signal(false);
+  /** Position de la photo ouverte en plein écran (`null` : visionneuse fermée). */
+  protected readonly viewing = signal<number | null>(null);
   protected readonly editing = signal(false);
   protected readonly notice = signal<string | null>(null);
   protected readonly now = signal(new Date());
@@ -142,6 +146,26 @@ export class EventDetail implements OnInit, OnDestroy {
     this.editing.set(false);
     this.event.set(null);
     this.error.set(EVENT_GONE);
+  }
+
+  protected openViewer(index: number): void {
+    this.notice.set(null);
+    this.viewing.set(index);
+  }
+
+  protected closeViewer(): void {
+    this.viewing.set(null);
+  }
+
+  /** Photo supprimée depuis la visionneuse : retirée de la galerie sans rechargement. */
+  protected onPhotoDeleted(photo: EventPhoto): void {
+    this.photos.update((list) => (list ?? []).filter((p) => p.id !== photo.id));
+    const thumb = this.thumbs()[photo.id];
+    if (thumb) {
+      URL.revokeObjectURL(thumb);
+      this.thumbs.update(({ [photo.id]: _, ...rest }) => rest);
+    }
+    this.notice.set('Photo supprimée.');
   }
 
   protected choosePhoto(): void {

@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -66,6 +67,14 @@ public class PhotoController {
     public ResponseEntity<InputStreamResource> thumbnail(@PathVariable String eventId, @PathVariable String photoId,
                                                          @AuthenticationPrincipal AuthenticatedUser current) {
         return serve(photoService.content(current.id(), eventId, photoId, true));
+    }
+
+    /** {@code 204} ; {@code 404} si la photo n'existe pas (ou plus) ou appartient à un autre utilisateur. */
+    @DeleteMapping("/{photoId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable String eventId, @PathVariable String photoId,
+                       @AuthenticationPrincipal AuthenticatedUser current) {
+        photoService.delete(current.id(), eventId, photoId);
     }
 
     private static ResponseEntity<InputStreamResource> serve(PhotoService.Content content) {

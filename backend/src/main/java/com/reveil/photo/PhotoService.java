@@ -132,6 +132,23 @@ public class PhotoService {
         return new Content(file, thumbnail ? "image/jpeg" : photo.getContentType());
     }
 
+    /**
+     * Supprime une photo de l'utilisateur : métadonnées retirées atomiquement (la photo disparaît aussitôt de la
+     * galerie), puis original et miniature dans GridFS. Photo inexistante, déjà supprimée ou d'un autre
+     * utilisateur : {@link PhotoNotFoundException} (pas de fuite d'existence).
+     */
+    public void delete(String ownerId, String eventId, String photoId) {
+        Photo photo = photos.deleteByIdAndEventIdAndOwnerId(photoId, eventId, ownerId)
+                .orElseThrow(PhotoNotFoundException::new);
+        try {
+            storage.delete(photo.getFileId());
+            storage.delete(photo.getThumbnailFileId());
+        } catch (RuntimeException e) {
+            // Métadonnées déjà retirées : les fichiers restants ne sont plus accessibles par l'API.
+            log.error("Fichiers de la photo {} non supprimés de GridFS", photoId, e);
+        }
+    }
+
     public record Content(PhotoStorage.StoredFile file, String contentType) {
     }
 

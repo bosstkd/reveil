@@ -76,17 +76,24 @@
         <p class="muted" data-testid="photos-empty">Aucune photo pour cet événement.</p>
       } @else {
         <ul class="gallery" data-testid="gallery">
-          @for (photo of photos(); track photo.id) {
+          @for (photo of photos(); track photo.id; let i = $index) {
             <li>
-              @if (thumbs()[photo.id]; as src) {
-                <img [src]="src" alt="Photo de l'événement" width="120" height="120" loading="lazy"
-                     data-testid="gallery-photo" />
-              } @else {
-                <span class="placeholder" data-testid="gallery-placeholder"></span>
-              }
+              <button type="button" class="thumb" (click)="openViewer(i)"
+                      [attr.aria-label]="'Voir la photo ' + (i + 1) + ' en plein écran'" data-testid="gallery-open">
+                @if (thumbs()[photo.id]; as src) {
+                  <img [src]="src" alt="Photo de l'événement" width="120" height="120" loading="lazy"
+                       data-testid="gallery-photo" />
+                } @else {
+                  <span class="placeholder" data-testid="gallery-placeholder"></span>
+                }
+              </button>
             </li>
           }
         </ul>
+      }
+      @if (viewing() !== null && photos()?.length) {
+        <app-photo-viewer [photos]="photos()!" [thumbs]="thumbs()" [start]="viewing()!"
+                          (closed)="closeViewer()" (deleted)="onPhotoDeleted($event)" />
       }
     </section>
   } @else {

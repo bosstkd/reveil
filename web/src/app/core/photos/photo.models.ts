@@ -43,6 +43,8 @@ export const BATCH_MAX_BYTES = 45 * 1024 * 1024;
 export const PHOTO_TOO_LARGE = `Photo trop volumineuse (maximum ${PHOTO_MAX_MB} Mo).`;
 export const PHOTO_UNSUPPORTED = 'Format non pris en charge : choisissez une photo JPEG, PNG ou HEIC.';
 export const PHOTO_UPLOAD_FAILED = "L'envoi de la photo a échoué. Réessayez dans un instant.";
+export const PHOTO_DELETE_FAILED = 'La suppression de la photo a échoué. Réessayez dans un instant.';
+export const PHOTO_CONTENT_FAILED = "Impossible d'afficher cette photo.";
 export const HEIC_CONVERSION_FAILED = 'conversion de la photo HEIC impossible.';
 
 export type PhotoKind = 'jpeg' | 'png' | 'heic';

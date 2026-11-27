@@ -164,4 +164,34 @@ class PhotoServiceTest {
             assertThat(r.message()).isEqualTo(PhotoService.STORE_FAILED);
         });
     }
+
+    @Test
+    void deleteRemovesTheMetadataThenBothFiles() {
+        Photo photo = new Photo("e1", "u1", "f1", "t1", "image/jpeg", 10, 1, 1);
+        when(photos.deleteByIdAndEventIdAndOwnerId("p1", "e1", "u1")).thenReturn(Optional.of(photo));
+
+        service.delete("u1", "e1", "p1");
+
+        verify(storage).delete("f1");
+        verify(storage).delete("t1");
+    }
+
+    @Test
+    void deletingAPhotoOfAnotherUserOrAlreadyDeletedIsNotFoundAndNothingIsRemoved() {
+        when(photos.deleteByIdAndEventIdAndOwnerId(anyString(), anyString(), anyString())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.delete("u2", "e1", "p1")).isInstanceOf(PhotoNotFoundException.class);
+        verify(storage, never()).delete(anyString());
+    }
+
+    @Test
+    void gridFsFailureAfterTheMetadataIsRemovedDoesNotFailTheDeletion() {
+        Photo photo = new Photo("e1", "u1", "f1", "t1", "image/jpeg", 10, 1, 1);
+        when(photos.deleteByIdAndEventIdAndOwnerId("p1", "e1", "u1")).thenReturn(Optional.of(photo));
+        org.mockito.Mockito.doThrow(new IllegalStateException("panne")).when(storage).delete("f1");
+
+        service.delete("u1", "e1", "p1");
+
+        verify(storage).delete("f1");
+    }
 }

@@ -14,6 +14,7 @@ import {
 } from '../photos/photos';
 import { listPhotos, uploadPhoto, uploadPhotos } from '../photos/photosApi';
 import { EventForm } from './EventForm';
+import { PhotoViewer } from './PhotoViewer';
 
 export const CAMERA_DENIED = "L'accès à l'appareil photo est nécessaire pour prendre une photo.";
 export const CAMERA_BLOCKED = "L'accès à l'appareil photo a été refusé. Autorisez-le dans les réglages de l'appareil.";
@@ -33,7 +34,8 @@ export const CLOCK_TICK_MS = 60_000;
 /**
  * Détail d'un événement (depuis la liste, une notification de rappel ou un lien reveil://events/<id>) :
  * titre, date, heure, lieu, temps restant (rafraîchi chaque minute), rappels configurés, galerie de miniatures, la prise de photo,
- * l'import depuis la galerie (10 photos au plus, envoyées en un seul envoi), la modification et la suppression (après confirmation).
+ * l'import depuis la galerie (10 photos au plus, envoyées en un seul envoi), la visionneuse plein écran (appui sur une miniature :
+ * défilement, suppression d'une photo après confirmation), la modification et la suppression (après confirmation).
  * Après suppression, l'écran se ferme (`onBack`) : la liste, remontée, est rechargée.
  */
 export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack: () => void }) {
@@ -54,6 +56,8 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
+  /** Position de la photo ouverte en plein écran (`null` : visionneuse fermée). */
+  const [viewing, setViewing] = useState<number | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -237,6 +241,12 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
     }
   }
 
+  const closeViewer = useCallback(() => setViewing(null), []);
+  const onPhotoDeleted = useCallback((deleted: EventPhoto) => {
+    setPhotos((list) => (list ?? []).filter((p) => p.id !== deleted.id));
+    setNotice('Photo supprimée.');
+  }, []);
+
   const imageHeaders = session ? { Authorization: `Bearer ${session.token}` } : undefined;
 
   return (
@@ -408,17 +418,30 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
               </Text>
             ) : (
               <View testID="gallery" style={styles.gallery}>
-                {photos.map((p) => (
-                  <Image
+                {photos.map((p, i) => (
+                  <Pressable
                     key={p.id}
-                    testID="gallery-photo"
-                    accessibilityLabel="Photo de l'événement"
-                    source={{ uri: `${API_URL}${p.thumbnailUrl}`, headers: imageHeaders }}
-                    style={styles.thumb}
-                  />
+                    testID="gallery-open"
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={`Voir la photo ${i + 1} en plein écran`}
+                    onPress={() => {
+                      setNotice(null);
+                      setViewing(i);
+                    }}
+                  >
+                    <Image
+                      testID="gallery-photo"
+                      accessibilityLabel="Photo de l'événement"
+                      source={{ uri: `${API_URL}${p.thumbnailUrl}`, headers: imageHeaders }}
+                      style={styles.thumb}
+                    />
+                  </Pressable>
                 ))}
               </View>
             )}
+            {viewing !== null && photos?.length ? (
+              <PhotoViewer photos={photos} start={viewing} onClose={closeViewer} onDeleted={onPhotoDeleted} />
+            ) : null}
           </View>
         </View>
       )}

@@ -92,3 +92,23 @@ export async function uploadPhotos(
   }
   throw new PhotoError(BATCH_UPLOAD_FAILED, res.status);
 }
+
+export const DELETE_FAILED = 'La suppression de la photo a échoué. Vérifiez votre connexion et réessayez.';
+
+/**
+ * DELETE /api/events/{id}/photos/{photoId}. Une photo déjà supprimée (404, autre appareil) est considérée
+ * comme supprimée : le résultat attendu est atteint.
+ */
+export async function deletePhoto(authFetch: AuthFetch, photo: EventPhoto): Promise<void> {
+  let res: Response;
+  try {
+    res = await authFetch(
+      `/api/events/${encodeURIComponent(photo.eventId)}/photos/${encodeURIComponent(photo.id)}`,
+      { method: 'DELETE' },
+    );
+  } catch {
+    throw new PhotoError(DELETE_FAILED, 0);
+  }
+  if (res.ok || res.status === 404) return;
+  throw new PhotoError(DELETE_FAILED, res.status);
+}

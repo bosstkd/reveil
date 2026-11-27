@@ -13,4 +13,10 @@ public interface PhotoRepository extends MongoRepository<Photo, String> {
     Optional<Photo> findByIdAndEventIdAndOwnerId(String id, String eventId, String ownerId);
 
     long deleteByEventId(String eventId);
+
+    /**
+     * Retire atomiquement (findAndRemove) la photo de l'utilisateur et la renvoie : deux suppressions
+     * concurrentes ne peuvent pas toutes deux réussir.
+     */
+    Optional<Photo> deleteByIdAndEventIdAndOwnerId(String id, String eventId, String ownerId);
 }

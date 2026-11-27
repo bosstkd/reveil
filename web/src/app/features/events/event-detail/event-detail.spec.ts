@@ -9,6 +9,7 @@ import {
   EventPhoto,
   HEIC_CONVERSION_FAILED,
   PHOTO_ACCEPT,
+  PHOTO_DELETE_FAILED,
   PHOTO_TOO_LARGE,
   PHOTO_UPLOAD_FAILED,
   relativeApiUrl,
@@ -403,5 +404,164 @@ describe('EventDetail', () => {
     vi.advanceTimersByTime(CLOCK_TICK_MS);
     render();
     expect(q('detail-remaining')!.textContent).toBe('dans 28 minutes');
+  });
+
+  describe('visionneuse plein écran', () => {
+    const content = (id: string) => `api/events/e1/photos/${id}/content`;
+    /** Répond aux téléchargements de photos d'origine en attente ; renvoie les identifiants demandés. */
+    const flushContents = () => {
+      const reqs = http.match((r) => r.url.endsWith('/content'));
+      reqs.forEach((r) => {
+        expect(r.request.responseType).toBe('blob');
+        r.flush(new Blob(['full'], { type: 'image/jpeg' }));
+      });
+      render();
+      return reqs.map((r) => r.request.url);
+    };
+    const key = (k: string) => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: k }));
+      render();
+    };
+    const counter = () => q('viewer-counter')!.textContent!.trim();
+    const openAt = (i: number) => {
+      all('gallery-open')[i].click();
+      render();
+    };
+
+    it('un clic sur une miniature ouvre la photo en plein écran (originale, voisines préchargées)', () => {
+      open(concert(), [photo('p3'), photo('p2'), photo('p1')]);
+      expect(q('photo-viewer')).toBeNull();
+      openAt(1);
+      expect(q('photo-viewer')!.getAttribute('role')).toBe('dialog');
+      expect(counter()).toBe('2 / 3');
+      // Aperçu (miniature) pendant le chargement de l'original.
+      expect(q('viewer-loading')).not.toBeNull();
+      expect(q<HTMLImageElement>('viewer-preview')!.getAttribute('src')).toBe('blob:thumb-2');
+      expect(flushContents().sort()).toEqual([content('p1'), content('p2'), content('p3')]);
+      expect(q('viewer-image')).not.toBeNull();
+      expect(q('viewer-loading')).toBeNull();
+      expect(document.activeElement).toBe(q('viewer-close'));
+    });
+
+    it('défilement vers les suivantes : boutons, flèches du clavier, glissé ; bornes désactivées', () => {
+      open(concert(), [photo('p4'), photo('p3'), photo('p2'), photo('p1')]);
+      openAt(0);
+      expect(flushContents().sort()).toEqual([content('p3'), content('p4')]);
+      expect(q<HTMLButtonElement>('viewer-previous')!.disabled).toBe(true);
+
+      q('viewer-next')!.click();
+      render();
+      expect(counter()).toBe('2 / 4');
+      expect(flushContents()).toEqual([content('p2')]); // seule la nouvelle voisine est chargée
+
+      key('ArrowRight');
+      expect(counter()).toBe('3 / 4');
+      expect(flushContents()).toEqual([content('p1')]);
+
+      const viewer = q('photo-viewer')!;
+      viewer.dispatchEvent(Object.assign(new Event('pointerdown'), { clientX: 300 }));
+      viewer.dispatchEvent(Object.assign(new Event('pointerup'), { clientX: 120 }));
+      render();
+      expect(counter()).toBe('4 / 4');
+      expect(q<HTMLButtonElement>('viewer-next')!.disabled).toBe(true);
+      key('ArrowRight');
+      expect(counter()).toBe('4 / 4');
+
+      viewer.dispatchEvent(Object.assign(new Event('pointerdown'), { clientX: 100 }));
+      viewer.dispatchEvent(Object.assign(new Event('pointerup'), { clientX: 400 }));
+      render();
+      key('ArrowLeft');
+      expect(counter()).toBe('2 / 4');
+      expect(flushContents()).toEqual([]);
+    });
+
+    it('Échap ou ✕ ferme la visionneuse et libère les URL des originaux', () => {
+      open(concert(), [photo('p1')]);
+      openAt(0);
+      flushContents();
+      key('Escape');
+      expect(q('photo-viewer')).toBeNull();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:thumb-2');
+
+      openAt(0);
+      flushContents();
+      q('viewer-close')!.click();
+      render();
+      expect(q('photo-viewer')).toBeNull();
+    });
+
+    it('original indisponible : message dans la visionneuse', () => {
+      open(concert(), [photo('p1')]);
+      openAt(0);
+      http.expectOne(content('p1')).flush(null, { status: 500, statusText: 'Error' });
+      render();
+      expect(q('viewer-image-error')).not.toBeNull();
+    });
+
+    it('la suppression demande une confirmation puis retire la photo de la galerie', () => {
+      open(concert(), [photo('p3'), photo('p2'), photo('p1')]);
+      openAt(1);
+      flushContents();
+
+      q('viewer-delete')!.click();
+      render();
+      expect(q('viewer-delete-confirm')!.textContent).toContain('Supprimer cette photo ?');
+      q('viewer-delete-cancel')!.click();
+      render();
+      expect(q('viewer-delete-confirm')).toBeNull();
+      http.expectNone({ method: 'DELETE' });
+
+      q('viewer-delete')!.click();
+      render();
+      q('viewer-delete-confirm-button')!.click();
+      render();
+      expect(q<HTMLButtonElement>('viewer-delete-confirm-button')!.disabled).toBe(true);
+      http.expectOne({ method: 'DELETE', url: 'api/events/e1/photos/p2' }).flush(null, { status: 204, statusText: 'No Content' });
+      render();
+
+      // La suivante prend la place de la photo supprimée ; galerie mise à jour sans rechargement.
+      expect(counter()).toBe('2 / 2');
+      expect(all('gallery-open')).toHaveLength(2);
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:thumb-2'); // miniature de p2
+      expect(q('detail-notice')!.textContent).toContain('Photo supprimée.');
+      http.expectNone('api/events/e1/photos');
+      flushContents();
+    });
+
+    it('suppression de la dernière photo : la visionneuse se ferme, galerie vide', () => {
+      open(concert(), [photo('p1')]);
+      openAt(0);
+      flushContents();
+      q('viewer-delete')!.click();
+      render();
+      q('viewer-delete-confirm-button')!.click();
+      // Déjà supprimée sur un autre appareil (404) : même résultat.
+      http.expectOne({ method: 'DELETE', url: 'api/events/e1/photos/p1' })
+        .flush({ message: 'Photo introuvable', errors: [] }, { status: 404, statusText: 'Not Found' });
+      render();
+      expect(q('photo-viewer')).toBeNull();
+      expect(q('photos-empty')).not.toBeNull();
+    });
+
+    it('échec de la suppression : message, la photo reste', () => {
+      open(concert(), [photo('p1')]);
+      openAt(0);
+      flushContents();
+      q('viewer-delete')!.click();
+      render();
+      q('viewer-delete-confirm-button')!.click();
+      http.expectOne({ method: 'DELETE', url: 'api/events/e1/photos/p1' }).flush(null, { status: 500, statusText: 'Error' });
+      render();
+      expect(q('viewer-error')!.textContent).toContain(PHOTO_DELETE_FAILED);
+      expect(q('photo-viewer')).not.toBeNull();
+      expect(all('gallery-open')).toHaveLength(1);
+    });
+
+    it('galerie de 50 photos : seules les miniatures sont téléchargées tant que rien n’est ouvert', () => {
+      const many = Array.from({ length: 50 }, (_, i) => photo(`p${50 - i}`));
+      open(concert(), many);
+      expect(all('gallery-photo')).toHaveLength(50);
+      http.expectNone((r) => r.url.endsWith('/content'));
+    });
   });
 });

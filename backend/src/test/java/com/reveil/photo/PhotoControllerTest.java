@@ -2,9 +2,11 @@ package com.reveil.photo;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -154,5 +156,26 @@ class PhotoControllerTest {
         mvc.perform(multipart("/api/events/e1/photos/batch").file(a).header("Authorization", "Bearer good"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Trop de photos : 10 au maximum par envoi"));
+    }
+
+    @Test
+    void deleteReturns204() throws Exception {
+        mvc.perform(delete("/api/events/e1/photos/p1").header("Authorization", "Bearer good"))
+                .andExpect(status().isNoContent());
+        verify(photoService).delete("u1", "e1", "p1");
+    }
+
+    @Test
+    void deleteRequiresAuthentication() throws Exception {
+        mvc.perform(delete("/api/events/e1/photos/p1")).andExpect(status().isUnauthorized());
+        verify(photoService, never()).delete(any(), any(), any());
+    }
+
+    @Test
+    void deletingAnUnknownPhotoReturns404() throws Exception {
+        doThrow(new PhotoNotFoundException()).when(photoService).delete("u1", "e1", "nope");
+        mvc.perform(delete("/api/events/e1/photos/nope").header("Authorization", "Bearer good"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Photo introuvable"));
     }
 }
