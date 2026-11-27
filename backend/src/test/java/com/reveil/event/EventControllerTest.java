@@ -104,6 +104,11 @@ class EventControllerTest {
             "{\"title\":\"Concert\",\"date\":\"2026-12-24\",\"timeZone\":\"UTC\"}|time",
             "{\"title\":\"Concert\",\"date\":\"2026-12-24\",\"time\":\"20:30\"}|timeZone",
             "{\"title\":\"Concert\",\"date\":\"2026-12-24\",\"time\":\"20:30\",\"timeZone\":\"Mars/Olympus\"}|timeZone",
+            // Rappels : 4 délais, délai non proposé, doublon, valeur nulle.
+            "{\"title\":\"C\",\"date\":\"2026-12-24\",\"time\":\"20:30\",\"timeZone\":\"UTC\",\"reminders\":[15,60,1440,10080]}|reminders",
+            "{\"title\":\"C\",\"date\":\"2026-12-24\",\"time\":\"20:30\",\"timeZone\":\"UTC\",\"reminders\":[30]}|reminders",
+            "{\"title\":\"C\",\"date\":\"2026-12-24\",\"time\":\"20:30\",\"timeZone\":\"UTC\",\"reminders\":[60,60]}|reminders",
+            "{\"title\":\"C\",\"date\":\"2026-12-24\",\"time\":\"20:30\",\"timeZone\":\"UTC\",\"reminders\":[null]}|reminders",
     })
     void missingOrInvalidFieldBlocksCreation(String body, String field) throws Exception {
         mvc.perform(post("/api/events").header("Authorization", "Bearer good")
@@ -111,6 +116,19 @@ class EventControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value(field));
         verify(eventService, never()).create(any(), any());
+    }
+
+    @Test
+    void upToThreeAllowedRemindersOrNoneAreAccepted() throws Exception {
+        when(eventService.create(eq("u1"), any())).thenReturn(response(false));
+        for (String reminders : List.of("[15,60,1440]", "[10080]", "[]")) {
+            mvc.perform(post("/api/events").header("Authorization", "Bearer good")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(VALID.replace("}", ",\"reminders\":" + reminders + "}")))
+                    .andExpect(status().isCreated());
+        }
+        verify(eventService).create(eq("u1"), eq(new CreateEventRequest("Concert", java.time.LocalDate.of(2026, 12, 24),
+                java.time.LocalTime.of(20, 30), "Europe/Paris", null, List.of())));
     }
 
     @Test

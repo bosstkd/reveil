@@ -124,9 +124,26 @@ class ReminderServiceTest {
     }
 
     @Test
-    void scheduleMissingUsesTheConfiguredLeadTime() {
-        when(queue.scheduleMissing(NOW, Duration.ofHours(1))).thenReturn(3L);
+    void scheduleMissingMigratesWithTheConfiguredLeadTime() {
+        when(queue.migrateLegacy(NOW, Duration.ofHours(1))).thenReturn(3L);
         assertThat(service.scheduleMissingReminders()).isEqualTo(3L);
-        verify(queue).scheduleMissing(eq(NOW), eq(Duration.ofHours(1)));
+        verify(queue).migrateLegacy(eq(NOW), eq(Duration.ofHours(1)));
+    }
+
+    @Test
+    void remindersOfAlreadyStartedEventsAreSkippedBeforeSending() {
+        when(queue.claimNextDue(any(), any())).thenReturn(Optional.empty());
+        service.sendDueReminders();
+        verify(queue).skipStarted(NOW.plusSeconds(5), NOW);
+    }
+
+    @Test
+    void bodyCountsDaysForEarlyReminders() {
+        assertThat(ReminderService.body(event("e", NOW.plus(Duration.ofDays(7)), "Olympia"), NOW))
+                .isEqualTo("Commence dans 7 jours, le 02/12 à 19:30 · Olympia");
+        assertThat(ReminderService.body(event("e", NOW.plus(Duration.ofDays(1)), null), NOW))
+                .isEqualTo("Commence dans 1 jour, le 26/11 à 19:30");
+        assertThat(ReminderService.body(event("e", NOW.plus(Duration.ofHours(26)), null), NOW))
+                .isEqualTo("Commence dans 1 jour 2 h, le 26/11 à 21:30");
     }
 }

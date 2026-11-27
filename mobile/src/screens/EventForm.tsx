@@ -3,11 +3,13 @@ import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import {
+  DEFAULT_REMINDERS,
   LOCATION_MAX_LENGTH,
   PAST_DATE_WARNING,
   PAST_DATE_WARNING_EDIT,
   ReveilEvent,
   TITLE_MAX_LENGTH,
+  configuredReminders,
   deviceTimeZone,
   formatDate,
   formatTime,
@@ -15,6 +17,7 @@ import {
   parseLocalDateTime,
 } from '../events/events';
 import { EventError, createEvent, updateEvent } from '../events/eventsApi';
+import { ReminderPicker } from './ReminderPicker';
 
 type Picker = 'date' | 'time' | null;
 
@@ -34,7 +37,7 @@ interface Props {
 
 /**
  * Création — ou modification si `event` est fourni — d'un événement : titre, date et heure obligatoires
- * (sélecteurs natifs), lieu facultatif.
+ * (sélecteurs natifs), lieu facultatif, jusqu'à 3 rappels (aucun : rappels désactivés).
  */
 export function EventForm({ event: editing, onCreated, onUpdated, onCancel }: Props) {
   const { authFetch } = useAuth();
@@ -43,6 +46,7 @@ export function EventForm({ event: editing, onCreated, onUpdated, onCancel }: Pr
   const [date, setDate] = useState<Date | null>(initial?.date ?? null);
   const [time, setTime] = useState<Date | null>(initial?.time ?? null);
   const [location, setLocation] = useState(editing?.location ?? '');
+  const [reminders, setReminders] = useState<number[]>(editing ? configuredReminders(editing) : [...DEFAULT_REMINDERS]);
   const [picker, setPicker] = useState<Picker>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
@@ -81,6 +85,7 @@ export function EventForm({ event: editing, onCreated, onUpdated, onCancel }: Pr
       time: formatTime(time),
       timeZone,
       location: location.trim() || null,
+      reminders,
     };
     try {
       if (editing) {
@@ -169,6 +174,8 @@ export function EventForm({ event: editing, onCreated, onUpdated, onCancel }: Pr
         onChangeText={setLocation}
         maxLength={LOCATION_MAX_LENGTH}
       />
+
+      <ReminderPicker value={reminders} onChange={setReminders} />
 
       {serverError ? (
         <Text testID="event-error" accessibilityRole="alert" style={styles.error}>

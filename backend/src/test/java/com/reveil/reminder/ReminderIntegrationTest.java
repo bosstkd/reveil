@@ -19,11 +19,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reveil.device.DeviceTokenRepository;
 import com.reveil.event.Event;
 import com.reveil.event.EventRepository;
+import com.reveil.event.Reminder;
+import com.reveil.event.ReminderStatus;
 import com.reveil.push.PushMessage;
 import com.reveil.push.PushResult;
 import com.reveil.push.PushSender;
 import com.reveil.session.SessionRepository;
 import com.reveil.user.UserRepository;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -102,10 +105,16 @@ class ReminderIntegrationTest {
 
     /** Crée un événement commençant dans {@code in} (heure UTC, à la minute). Renvoie son id. */
     private String createEvent(String bearer, String title, Duration in) throws Exception {
+        return createEvent(bearer, title, in, null);
+    }
+
+    /** Idem avec les délais de rappel {@code reminders} (JSON, ex. « [15,60] » ; null : délai par défaut). */
+    private String createEvent(String bearer, String title, Duration in, String reminders) throws Exception {
         LocalDateTime at = LocalDateTime.ofInstant(Instant.now().plus(in), ZoneOffset.UTC).truncatedTo(ChronoUnit.MINUTES);
         String body = mvc.perform(post("/api/events").header("Authorization", bearer).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"" + title + "\",\"date\":\"" + at.toLocalDate() + "\",\"time\":\""
-                                + at.toLocalTime() + "\",\"timeZone\":\"UTC\"}"))
+                                + at.toLocalTime() + "\",\"timeZone\":\"UTC\""
+                                + (reminders == null ? "" : ",\"reminders\":" + reminders) + "}"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return json.readTree(body).get("id").asText();
@@ -122,7 +131,8 @@ class ReminderIntegrationTest {
         String later = createEvent(bearer(alice), "Dans 3 h", Duration.ofHours(3));
 
         Event laterEvent = events.findById(later).orElseThrow();
-        assertThat(laterEvent.getReminderDueAt()).isEqualTo(laterEvent.getStartsAt().minus(Duration.ofHours(1)));
+        assertThat(laterEvent.getReminders()).singleElement().satisfies(r ->
+                assertThat(r.getDueAt()).isEqualTo(laterEvent.getStartsAt().minus(Duration.ofHours(1))));
 
         assertThat(reminders.sendDueReminders()).isEqualTo(1);
         ArgumentCaptor<PushMessage> sent = ArgumentCaptor.forClass(PushMessage.class);
@@ -133,8 +143,9 @@ class ReminderIntegrationTest {
 
         Document doc = mongo.getCollection("events").find(new Document("_id", new org.bson.types.ObjectId(soon))).first();
         assertThat(doc).isNotNull();
-        assertThat(doc.containsKey("reminderDueAt")).isFalse();
-        assertThat(doc.get("reminderSentAt")).isInstanceOf(Date.class);
+        Document reminder = doc.getList("reminders", Document.class).get(0);
+        assertThat(reminder.getString("status")).isEqualTo("SENT");
+        assertThat(reminder.get("processedAt")).isInstanceOf(Date.class);
 
         // Pas de second envoi au passage suivant.
         assertThat(reminders.sendDueReminders()).isZero();
@@ -181,7 +192,8 @@ class ReminderIntegrationTest {
         moveEvent(bearer(alice), id, "Concert", Duration.ofDays(2));
 
         Event moved = events.findById(id).orElseThrow();
-        assertThat(moved.getReminderDueAt()).isEqualTo(moved.getStartsAt().minus(Duration.ofHours(1)));
+        assertThat(moved.getReminders()).singleElement().satisfies(r ->
+                assertThat(r.getDueAt()).isEqualTo(moved.getStartsAt().minus(Duration.ofHours(1))));
         assertThat(reminders.sendDueReminders()).isZero(); // l'ancienne échéance ne part plus
         verify(push, never()).send(any());
 
@@ -207,18 +219,22 @@ class ReminderIntegrationTest {
                         .content("{\"title\":\"Concert (salle B)\",\"date\":\"" + same.toLocalDate() + "\",\"time\":\""
                                 + same.toLocalTime() + "\",\"timeZone\":\"UTC\"}"))
                 .andExpect(status().isOk());
-        assertThat(events.findById(id).orElseThrow().getReminderDueAt()).isNull();
+        assertThat(events.findById(id).orElseThrow().getReminders()).extracting(Reminder::getStatus)
+                .containsExactly(ReminderStatus.SENT);
         assertThat(reminders.sendDueReminders()).isZero();
 
         // Date reportée : un nouveau rappel est programmé.
         moveEvent(bearer(alice), id, "Concert", Duration.ofDays(1));
         Event moved = events.findById(id).orElseThrow();
-        assertThat(moved.getReminderDueAt()).isEqualTo(moved.getStartsAt().minus(Duration.ofHours(1)));
-        assertThat(moved.getReminderSentAt()).isNull();
+        assertThat(moved.getReminders()).singleElement().satisfies(r -> {
+            assertThat(r.getDueAt()).isEqualTo(moved.getStartsAt().minus(Duration.ofHours(1)));
+            assertThat(r.getStatus()).isEqualTo(ReminderStatus.SCHEDULED);
+            assertThat(r.getProcessedAt()).isNull();
+        });
 
         // Déplacé dans le passé : plus aucun rappel.
         moveEvent(bearer(alice), id, "Concert", Duration.ofDays(-1));
-        assertThat(events.findById(id).orElseThrow().getReminderDueAt()).isNull();
+        assertThat(events.findById(id).orElseThrow().getReminders()).isEmpty();
         verify(push, times(1)).send(any());
     }
 
@@ -256,29 +272,196 @@ class ReminderIntegrationTest {
     }
 
     @Test
-    void pastEventsGetNoReminderAndExistingUpcomingEventsAreScheduled() throws Exception {
+    void pastEventsGetNoReminderAndLegacyEventsAreMigrated() throws Exception {
         JsonNode alice = register("alice@example.com");
         createEvent(bearer(alice), "Hier", Duration.ofDays(-1));
-        assertThat(events.findAll()).singleElement().satisfies(e -> assertThat(e.getReminderDueAt()).isNull());
+        assertThat(events.findAll()).singleElement().satisfies(e -> assertThat(e.getReminders()).isEmpty());
 
-        // Événement créé avant cette fonctionnalité : aucun champ de rappel.
         Instant startsAt = Instant.now().plus(Duration.ofDays(2)).truncatedTo(ChronoUnit.MILLIS);
-        mongo.getCollection("events").insertOne(new Document("title", "Ancien").append("startsAt", Date.from(startsAt))
-                .append("timeZone", "UTC").append("ownerId", "u1"));
+        var raw = mongo.getCollection("events");
+        // Créé avant toute gestion des rappels : rappel par défaut.
+        raw.insertOne(legacy("Ancien", startsAt));
+        // Rappel unique programmé (story 5) : repris avec son délai.
+        raw.insertOne(legacy("Programmé", startsAt).append("reminderDueAt", Date.from(startsAt.minus(Duration.ofHours(1)))));
+        // Rappel unique déjà envoyé : repris comme envoyé, pas de renvoi.
+        raw.insertOne(legacy("Envoyé", startsAt).append("reminderSentAt", Date.from(startsAt.minus(Duration.ofMinutes(59)))));
+        // Événement passé sans rappel : aucun rappel.
+        raw.insertOne(legacy("Passé", startsAt.minus(Duration.ofDays(5))));
 
-        assertThat(reminders.scheduleMissingReminders()).isEqualTo(1);
-        Document doc = mongo.getCollection("events").find(new Document("title", "Ancien")).first();
-        assertThat(doc.getDate("reminderDueAt").toInstant()).isEqualTo(startsAt.minus(Duration.ofHours(1)));
+        assertThat(reminders.scheduleMissingReminders()).isEqualTo(4);
         assertThat(reminders.scheduleMissingReminders()).isZero(); // idempotent
+
+        Document ancien = raw.find(new Document("title", "Ancien")).first();
+        Document first = ancien.getList("reminders", Document.class).get(0);
+        assertThat(first.getInteger("minutesBefore")).isEqualTo(60);
+        assertThat(first.getDate("dueAt").toInstant()).isEqualTo(startsAt.minus(Duration.ofHours(1)));
+        assertThat(first.getString("status")).isEqualTo("SCHEDULED");
+        Document programme = raw.find(new Document("title", "Programmé")).first();
+        assertThat(programme.containsKey("reminderDueAt")).isFalse();
+        assertThat(programme.getList("reminders", Document.class).get(0).getString("status")).isEqualTo("SCHEDULED");
+        Document envoye = raw.find(new Document("title", "Envoyé")).first();
+        assertThat(envoye.containsKey("reminderSentAt")).isFalse();
+        assertThat(envoye.getList("reminders", Document.class).get(0).getString("status")).isEqualTo("SENT");
+        assertThat(raw.find(new Document("title", "Passé")).first().getList("reminders", Document.class)).isEmpty();
+    }
+
+    private static Document legacy(String title, Instant startsAt) {
+        return new Document("title", title).append("startsAt", Date.from(startsAt)).append("timeZone", "UTC")
+                .append("ownerId", "u1");
     }
 
     @Test
-    void dueRemindersAreFoundThroughTheirIndex() {
-        assertThat(mongo.indexOps(Event.class).getIndexInfo())
-                .anySatisfy(ix -> assertThat(ix.getName()).isEqualTo("ix_events_reminder_due_at"));
-        Document plan = mongo.getCollection("events")
-                .find(new Document("reminderDueAt", new Document("$lte", new Date()))).explain();
-        assertThat(plan.toJson()).contains("ix_events_reminder_due_at");
+    void dueRemindersAreFoundThroughTheirIndexAndTheLegacyIndexIsDropped() {
+        mongo.getCollection("events").createIndex(new Document("reminderDueAt", 1),
+                new com.mongodb.client.model.IndexOptions().name(ReminderQueue.LEGACY_INDEX).sparse(true));
+        reminders.scheduleMissingReminders();
+
+        assertThat(mongo.indexOps(Event.class).getIndexInfo()).extracting(ix -> ix.getName())
+                .contains("ix_events_reminders_due").doesNotContain(ReminderQueue.LEGACY_INDEX);
+        Document plan = mongo.getCollection("events").find(new Document("reminders", new Document("$elemMatch",
+                new Document("status", "SCHEDULED").append("dueAt", new Document("$lte", new Date()))))).explain();
+        assertThat(plan.toJson()).contains("ix_events_reminders_due");
+    }
+
+    // --- Story 9 : plusieurs rappels par événement ----------------------------------------------------------
+
+    @Autowired
+    ReminderQueue queue;
+    @Autowired
+    com.reveil.device.DeviceService deviceService;
+    @Autowired
+    ReminderSettings settings;
+
+    /** Planificateur à l'heure {@code at}. */
+    private ReminderService at(Instant at) {
+        return new ReminderService(queue, deviceService, push, settings, Clock.fixed(at, ZoneOffset.UTC));
+    }
+
+    @Test
+    void eachConfiguredReminderIsSentOnceAtItsOwnTime() throws Exception {
+        JsonNode alice = register("alice@example.com");
+        registerDevice(bearer(alice), "alice-phone");
+        String id = createEvent(bearer(alice), "Mariage", Duration.ofDays(10), "[10080,60,15]");
+        Instant startsAt = events.findById(id).orElseThrow().getStartsAt();
+
+        mvc.perform(get("/api/events/" + id).header("Authorization", bearer(alice)))
+                .andExpect(jsonPath("$.reminders.length()").value(3))
+                .andExpect(jsonPath("$.reminders[0].minutesBefore").value(10080))
+                .andExpect(jsonPath("$.reminders[0].remindAt").value(startsAt.minus(Duration.ofDays(7)).toString()))
+                .andExpect(jsonPath("$.reminders[1].minutesBefore").value(60))
+                .andExpect(jsonPath("$.reminders[2].minutesBefore").value(15))
+                .andExpect(jsonPath("$.reminders[*].status").value(org.hamcrest.Matchers.everyItem(
+                        org.hamcrest.Matchers.is("scheduled"))));
+
+        assertThat(at(startsAt.minus(Duration.ofDays(8))).sendDueReminders()).isZero();
+        assertThat(at(startsAt.minus(Duration.ofDays(7))).sendDueReminders()).isEqualTo(1);
+        assertThat(at(startsAt.minus(Duration.ofDays(6))).sendDueReminders()).isZero(); // pas de renvoi
+        assertThat(at(startsAt.minus(Duration.ofMinutes(60))).sendDueReminders()).isEqualTo(1);
+        assertThat(at(startsAt.minus(Duration.ofMinutes(15))).sendDueReminders()).isEqualTo(1);
+        assertThat(at(startsAt.minus(Duration.ofMinutes(1))).sendDueReminders()).isZero();
+
+        ArgumentCaptor<PushMessage> sent = ArgumentCaptor.forClass(PushMessage.class);
+        verify(push, times(3)).send(sent.capture());
+        assertThat(sent.getAllValues()).extracting(PushMessage::body).containsExactly(
+                "Commence dans 7 jours, le " + java.time.format.DateTimeFormatter.ofPattern("dd/MM")
+                        .format(startsAt.atZone(ZoneOffset.UTC)) + " à "
+                        + java.time.format.DateTimeFormatter.ofPattern("HH:mm").format(startsAt.atZone(ZoneOffset.UTC)),
+                "Commence dans 1 h, à " + java.time.format.DateTimeFormatter.ofPattern("HH:mm").format(startsAt.atZone(ZoneOffset.UTC)),
+                "Commence dans 15 min, à " + java.time.format.DateTimeFormatter.ofPattern("HH:mm").format(startsAt.atZone(ZoneOffset.UTC)));
+
+        mvc.perform(get("/api/events/" + id).header("Authorization", bearer(alice)))
+                .andExpect(jsonPath("$.reminders[*].status").value(org.hamcrest.Matchers.contains("sent", "sent", "sent")));
+    }
+
+    @Test
+    void disabledRemindersAreNeverSent() throws Exception {
+        JsonNode alice = register("alice@example.com");
+        registerDevice(bearer(alice), "alice-phone");
+        String id = createEvent(bearer(alice), "Discret", Duration.ofMinutes(10), "[]");
+
+        mvc.perform(get("/api/events/" + id).header("Authorization", bearer(alice)))
+                .andExpect(jsonPath("$.reminders").isEmpty());
+        Instant startsAt = events.findById(id).orElseThrow().getStartsAt();
+        assertThat(at(startsAt.minusSeconds(30)).sendDueReminders()).isZero();
+        verify(push, never()).send(any());
+    }
+
+    @Test
+    void severalOverdueRemindersOfTheSameEventGiveASingleNotification() throws Exception {
+        JsonNode alice = register("alice@example.com");
+        registerDevice(bearer(alice), "alice-phone");
+        // Dans 30 min : rappels « 1 semaine » et « 1 h » déjà échus, « 15 min » à venir.
+        String id = createEvent(bearer(alice), "Rendez-vous", Duration.ofMinutes(30), "[10080,60,15]");
+
+        assertThat(reminders.sendDueReminders()).isEqualTo(1);
+        verify(push, times(1)).send(any());
+        assertThat(events.findById(id).orElseThrow().getReminders()).extracting(Reminder::getStatus)
+                .containsExactly(ReminderStatus.SENT, ReminderStatus.SENT, ReminderStatus.SCHEDULED);
+    }
+
+    @Test
+    void changingTheChosenRemindersKeepsAlreadySentOnesAndSchedulesNewOnes() throws Exception {
+        JsonNode alice = register("alice@example.com");
+        registerDevice(bearer(alice), "alice-phone");
+        String id = createEvent(bearer(alice), "Concert", Duration.ofMinutes(30), "[60]");
+        assertThat(reminders.sendDueReminders()).isEqualTo(1);
+
+        Event current = events.findById(id).orElseThrow();
+        LocalDateTime same = LocalDateTime.ofInstant(current.getStartsAt(), ZoneOffset.UTC);
+        mvc.perform(put("/api/events/" + id).header("Authorization", bearer(alice)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Concert\",\"date\":\"" + same.toLocalDate() + "\",\"time\":\""
+                                + same.toLocalTime() + "\",\"timeZone\":\"UTC\",\"reminders\":[60,15]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reminders[0].minutesBefore").value(60))
+                .andExpect(jsonPath("$.reminders[0].status").value("sent"))
+                .andExpect(jsonPath("$.reminders[1].minutesBefore").value(15))
+                .andExpect(jsonPath("$.reminders[1].status").value("scheduled"));
+
+        assertThat(reminders.sendDueReminders()).isZero(); // le rappel « 1 h » ne repart pas
+        assertThat(at(current.getStartsAt().minus(Duration.ofMinutes(15))).sendDueReminders()).isEqualTo(1);
+        verify(push, times(2)).send(any());
+
+        // Désactivation de tous les rappels.
+        mvc.perform(put("/api/events/" + id).header("Authorization", bearer(alice)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Concert\",\"date\":\"" + same.toLocalDate() + "\",\"time\":\""
+                                + same.toLocalTime() + "\",\"timeZone\":\"UTC\",\"reminders\":[]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reminders").isEmpty());
+    }
+
+    @Test
+    void concurrentSchedulersSendEachReminderOnlyOnce() throws Exception {
+        JsonNode alice = register("alice@example.com");
+        registerDevice(bearer(alice), "alice-phone");
+        for (int i = 0; i < 20; i++) {
+            createEvent(bearer(alice), "Événement " + i, Duration.ofMinutes(30), "[60,15]");
+        }
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(4);
+        try {
+            var tasks = java.util.stream.IntStream.range(0, 4)
+                    .mapToObj(n -> (java.util.concurrent.Callable<Integer>) () -> reminders.sendDueReminders()).toList();
+            int total = 0;
+            for (var f : pool.invokeAll(tasks)) {
+                total += f.get();
+            }
+            assertThat(total).isEqualTo(20);
+        } finally {
+            pool.shutdown();
+        }
+        verify(push, times(20)).send(any());
+    }
+
+    @Test
+    void remindersOfAnEventThatAlreadyStartedAreSkipped() throws Exception {
+        JsonNode alice = register("alice@example.com");
+        registerDevice(bearer(alice), "alice-phone");
+        String id = createEvent(bearer(alice), "Raté", Duration.ofMinutes(30), "[60,15]");
+        Instant startsAt = events.findById(id).orElseThrow().getStartsAt();
+
+        assertThat(at(startsAt.plusSeconds(60)).sendDueReminders()).isZero(); // API arrêtée jusqu'après le début
+        verify(push, never()).send(any());
+        mvc.perform(get("/api/events/" + id).header("Authorization", bearer(alice)))
+                .andExpect(jsonPath("$.reminders[*].status").value(org.hamcrest.Matchers.contains("skipped", "skipped")));
     }
 
     @Test

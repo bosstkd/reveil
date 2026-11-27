@@ -10,6 +10,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +28,7 @@ public class ReminderService {
 
     private static final Logger log = LoggerFactory.getLogger(ReminderService.class);
     private static final DateTimeFormatter HOUR = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM");
 
     private final ReminderQueue queue;
     private final DeviceService devices;
@@ -48,10 +50,17 @@ public class ReminderService {
         this.clock = clock;
     }
 
-    /** Traite tous les rappels échus ; renvoie le nombre de rappels pris en charge. */
+    /**
+     * Traite tous les rappels échus ; renvoie le nombre d'événements notifiés. Chaque rappel est marqué envoyé
+     * au moment où il est pris ({@link ReminderQueue#claimNextDue}) : il n'est jamais envoyé deux fois.
+     */
     public int sendDueReminders() {
         Instant now = clock.instant();
         Instant dueBefore = now.plus(settings.lookahead());
+        long skipped = queue.skipStarted(dueBefore, now);
+        if (skipped > 0) {
+            log.info("Rappels abandonnés pour {} événement(s) déjà commencé(s)", skipped);
+        }
         int processed = 0;
         for (Optional<Event> next = queue.claimNextDue(dueBefore, now); next.isPresent();
              next = queue.claimNextDue(dueBefore, now)) {
@@ -61,9 +70,9 @@ public class ReminderService {
         return processed;
     }
 
-    /** Programme les rappels des événements antérieurs à cette fonctionnalité. */
+    /** Convertit les événements antérieurs à la gestion des rappels multiples (rappel par défaut si à venir). */
     public long scheduleMissingReminders() {
-        return queue.scheduleMissing(clock.instant(), settings.leadTime());
+        return queue.migrateLegacy(clock.instant(), settings.leadTime());
     }
 
     private void remind(Event event, Instant now) {
@@ -89,7 +98,10 @@ public class ReminderService {
         }
     }
 
-    /** « Commence dans 1 h, à 20:30 · Olympia » (heure dans le fuseau de saisie de l'événement). */
+    /**
+     * « Commence dans 1 h, à 20:30 · Olympia » ; à partir d'un jour : « Commence dans 7 jours, le 24/12 à 20:30 »
+     * (heure dans le fuseau de saisie de l'événement).
+     */
     static String body(Event event, Instant now) {
         long minutes = Math.round(Duration.between(now, event.getStartsAt()).toSeconds() / 60.0);
         String in;
@@ -97,11 +109,16 @@ public class ReminderService {
             in = "maintenant";
         } else if (minutes < 60) {
             in = "dans " + minutes + " min";
-        } else {
+        } else if (minutes < 1440) {
             in = "dans " + (minutes / 60) + " h" + (minutes % 60 == 0 ? "" : " " + (minutes % 60) + " min");
+        } else {
+            long days = minutes / 1440;
+            long hours = (minutes % 1440) / 60;
+            in = "dans " + days + (days > 1 ? " jours" : " jour") + (hours == 0 ? "" : " " + hours + " h");
         }
-        String at = HOUR.format(event.getStartsAt().atZone(ZoneId.of(event.getTimeZone())));
+        ZonedDateTime local = event.getStartsAt().atZone(ZoneId.of(event.getTimeZone()));
+        String at = (minutes >= 1440 ? "le " + DAY.format(local) + " à " : "à ") + HOUR.format(local);
         String where = event.getLocation() == null ? "" : " · " + event.getLocation();
-        return "Commence " + in + ", à " + at + where;
+        return "Commence " + in + ", " + at + where;
     }
 }

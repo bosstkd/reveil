@@ -1,0 +1,38 @@
+# Reveil — mémoire du projet
+
+Application de rappels d'événements avec photos. Détail fonctionnel et API : `README.md` (à tenir à jour).
+
+## Architecture
+- `backend/` — API REST Spring Boot 3.5 / Java 17 / MongoDB. Paquets par domaine sous `com.reveil` :
+  `auth` (JWT + sessions), `session`, `user`, `event` (CRUD, rappels configurés), `reminder` (planificateur, file,
+  envoi), `push` (FCM HTTP v1, ou journalisation sans config), `device` (jetons FCM), `photo` (GridFS + miniatures),
+  `config` (sécurité, erreurs JSON `{message, errors[{field,message}]}`).
+- `web/` — Angular 22 (composants standalone, signals, formulaires réactifs). `core/` (services, modèles),
+  `features/` (écrans). Appels API en chemins **relatifs** (`api/...`), base href au build. Tests Vitest (`ng test`).
+- `mobile/` — React Native / Expo SDK 58. `src/screens`, `src/events` (modèles + API), `src/auth`. Tests Jest
+  (`jest-expo`, `@testing-library/react-native`), via `<App />` avec `fetch` simulé.
+- Docker : `Dockerfile` multi-étapes (cibles `api`, `web` = nginx 8080 relayant `/api`), `docker-compose.devpilot.yml`
+  (mongo 4.4, api, web ; argument `BASE_HREF=/test/reveil/`).
+
+## Conventions
+- Code, commentaires, messages et tests en **français**. Textes d'erreur API en français.
+- Événements : instant UTC `startsAt` + fuseau IANA de saisie ; le client envoie date/heure locales + `timeZone`.
+- Rappels (story 9) : tableau `reminders` dans le document `events` (`minutesBefore`, `dueAt`, `status`
+  SCHEDULED/SENT/SKIPPED, `processedAt`) + `remindersVersion` (verrou optimiste). Délais autorisés dans
+  `ReminderOptions` (15, 60, 1440, 10080 ; max 3) — dupliqués côté clients (`REMINDER_OPTIONS` dans
+  `web/.../event.models.ts` et `mobile/src/events/events.ts`) : garder synchronisés.
+- Envoi « une seule fois » : le statut passe à SENT par `findAndModify` atomique **avant** l'envoi (`ReminderQueue`).
+- Écritures concurrentes : `findAndModify` ciblé, jamais `save()` d'un document relu pour une modification.
+- `data-testid` sur les éléments testés (web : attribut ; mobile : `testID`).
+
+## Commandes
+- Tout vérifier : `./devpilot-verify.sh` (backend `mvn test`, web `ng test` + build prod, mobile `jest` + `tsc`).
+- Backend seul : `cd backend && mvn test`. MongoDB embarqué 4.4 → besoin de `libcrypto.so.1.1` : le script le
+  télécharge dans `~/.cache/reveil/libssl1.1` et règle `LD_LIBRARY_PATH` (ou `EMBEDDED_MONGO_VERSION=7.0.14` si AVX).
+- Web : `cd web && npx ng test --watch=false`. Mobile : `cd mobile && npm test && npm run typecheck`.
+- Les tests backend désactivent le planificateur (`reveil.reminders.scheduler-enabled=false`) et appellent
+  `ReminderService.sendDueReminders()` ; horloge injectable via les constructeurs package-private (`Clock`).
+
+## Historique des stories
+1–3 compte / connexion / sessions · 4 liste des événements · 5 rappel push 1 h avant · 6 photos · 7 modifier/supprimer
+· 8 détail · 9 choix des rappels (jusqu'à 3 délais, désactivation, envoi unique).

@@ -51,10 +51,37 @@ export interface CreateEventPayload {
   time: string;
   timeZone: string;
   location: string | null;
+  /** Délais des rappels en minutes (au plus 3 parmi REMINDER_OPTIONS) ; liste vide : aucun rappel. */
+  reminders: number[];
 }
 
 /** Modification (PUT /api/events/{id}) : toutes les informations saisies à la création. */
 export type UpdateEventPayload = CreateEventPayload;
+
+/** Délais de rappel proposés (minutes avant l'événement), du plus proche au plus éloigné. */
+export const REMINDER_OPTIONS: readonly number[] = [15, 60, 1440, 10080];
+/** Nombre maximal de rappels par événement. */
+export const MAX_REMINDERS = 3;
+/** Rappel proposé par défaut à la création : 1 h avant. */
+export const DEFAULT_REMINDERS: readonly number[] = [60];
+
+/**
+ * Ajoute ou retire le délai `minutes` de la sélection (triée du plus éloigné au plus proche).
+ * Ajout ignoré si MAX_REMINDERS délais sont déjà choisis.
+ */
+export function toggleReminder(selected: readonly number[], minutes: number): number[] {
+  if (selected.includes(minutes)) return selected.filter((m) => m !== minutes);
+  if (selected.length >= MAX_REMINDERS) return [...selected];
+  return [...selected, minutes].sort((a, b) => b - a);
+}
+
+/** Délais configurés d'un événement (pré-remplissage du formulaire de modification). */
+export function configuredReminders(event: ReveilEvent): number[] {
+  return (event.reminders ?? [])
+    .map((r) => r.minutesBefore)
+    .filter((m) => REMINDER_OPTIONS.includes(m))
+    .sort((a, b) => b - a);
+}
 
 export const TITLE_MAX_LENGTH = 200;
 export const LOCATION_MAX_LENGTH = 300;
@@ -156,9 +183,13 @@ export function timeUntil(startsAt: string, now: Date = new Date()): string {
   return diff > 0 ? `dans ${label}` : `il y a ${label}`;
 }
 
-/** Délai d'un rappel (« 1 h avant », « 30 min avant », « 1 h 30 min avant », « 2 jours avant »). */
+/** Délai d'un rappel (« 1 h avant », « 30 min avant », « 1 h 30 min avant », « 2 jours avant », « 1 semaine avant »). */
 export function reminderDelay(minutesBefore: number): string {
   if (minutesBefore <= 0) return 'Au début';
+  if (minutesBefore % 10080 === 0) {
+    const weeks = minutesBefore / 10080;
+    return `${weeks} ${weeks > 1 ? 'semaines' : 'semaine'} avant`;
+  }
   if (minutesBefore % 1440 === 0) {
     const days = minutesBefore / 1440;
     return `${days} ${days > 1 ? 'jours' : 'jour'} avant`;

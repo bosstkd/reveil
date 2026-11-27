@@ -64,9 +64,47 @@ describe('EventForm', () => {
       time: '20:30',
       timeZone: userTimeZone(),
       location: null,
+      reminders: [60],
     });
     req.flush({ id: 'e1', title: 'Concert', warnings: [] });
     expect(created).toHaveBeenCalledWith(expect.objectContaining({ id: 'e1' }));
+  });
+
+  it('propose 15 min, 1 h, 1 jour et 1 semaine, 1 h coché par défaut', () => {
+    const labels = Array.from(q('event-reminders')!.querySelectorAll('label')).map((l) => l.textContent!.trim());
+    expect(labels).toEqual(['15 min avant', '1 h avant', '1 jour avant', '1 semaine avant']);
+    expect(q<HTMLInputElement>('reminder-60')!.checked).toBe(true);
+    expect(q<HTMLInputElement>('reminder-15')!.checked).toBe(false);
+  });
+
+  it('limite le choix à 3 rappels et les envoie du plus éloigné au plus proche', () => {
+    q('reminder-15')!.click();
+    q('reminder-10080')!.click();
+    fixture.detectChanges();
+    expect(q('reminders-max')!.textContent).toContain('3 rappels maximum');
+    expect(q<HTMLInputElement>('reminder-1440')!.disabled).toBe(true);
+
+    type('event-title', 'Mariage');
+    type('event-date', '2099-06-20');
+    type('event-time', '15:00');
+    q('event-submit')!.click();
+    const req = http.expectOne({ method: 'POST', url: 'api/events' });
+    expect(req.request.body.reminders).toEqual([10080, 60, 15]);
+    req.flush({ id: 'e1', warnings: [] });
+  });
+
+  it('permet de créer un événement sans aucun rappel', () => {
+    q('reminder-60')!.click();
+    fixture.detectChanges();
+    expect(q('reminders-off')!.textContent).toContain('Aucun rappel');
+
+    type('event-title', 'Sans rappel');
+    type('event-date', '2099-06-20');
+    type('event-time', '15:00');
+    q('event-submit')!.click();
+    const req = http.expectOne({ method: 'POST', url: 'api/events' });
+    expect(req.request.body.reminders).toEqual([]);
+    req.flush({ id: 'e1', warnings: [] });
   });
 
   it('avertit pour une date passée sans bloquer la création', () => {
@@ -111,6 +149,10 @@ describe('EventForm', () => {
       location: 'Olympia',
       past: false,
       warnings: [],
+      reminders: [
+        { minutesBefore: 1440, remindAt: '2099-12-23T19:30:00Z', status: 'scheduled' as const },
+        { minutesBefore: 15, remindAt: '2099-12-24T19:15:00Z', status: 'scheduled' as const },
+      ],
     };
 
     beforeEach(() => {
@@ -146,9 +188,24 @@ describe('EventForm', () => {
         time: '22:00',
         timeZone: 'America/New_York',
         location: null,
+        reminders: [1440, 15],
       });
       req.flush({ ...concert, title: 'Concert reporté' });
       expect(updated).toHaveBeenCalledWith(expect.objectContaining({ title: 'Concert reporté' }));
+    });
+
+    it('pré-coche les rappels configurés et permet de les désactiver', () => {
+      expect(q<HTMLInputElement>('reminder-1440')!.checked).toBe(true);
+      expect(q<HTMLInputElement>('reminder-15')!.checked).toBe(true);
+      expect(q<HTMLInputElement>('reminder-60')!.checked).toBe(false);
+
+      q('reminders-disable')!.click();
+      fixture.detectChanges();
+      expect(q('reminders-off')).not.toBeNull();
+      q('event-submit')!.click();
+      const req = http.expectOne({ method: 'PUT', url: 'api/events/e1' });
+      expect(req.request.body.reminders).toEqual([]);
+      req.flush(concert);
     });
 
     it('bloque l’enregistrement si un champ obligatoire est vidé', () => {

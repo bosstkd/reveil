@@ -1,14 +1,15 @@
 package com.reveil.event;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Nouvelles valeurs d'un événement modifié.
  *
- * @param rescheduleReminder vrai si la date change : le rappel est alors recalculé ({@code reminderDueAt}
- *                           remplacé, {@code reminderSentAt} effacé) ; faux : les champs du rappel ne sont pas touchés
- * @param reminderDueAt      nouvelle échéance du rappel (null : aucun rappel, événement passé)
+ * @param reminders       nouveaux rappels (null : rappels inchangés, non écrits)
+ * @param expectedVersion version des rappels lue avant le calcul ({@code remindersVersion}) : les rappels ne sont
+ *                        écrits que si le planificateur ne les a pas modifiés entre-temps (sinon : aucune écriture)
  */
 public record EventChanges(String title, Instant startsAt, String timeZone, String location,
-                           boolean rescheduleReminder, Instant reminderDueAt) {
+                           List<Reminder> reminders, long expectedVersion) {
 }

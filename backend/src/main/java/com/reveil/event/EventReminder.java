@@ -1,9 +1,7 @@
 package com.reveil.event;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Rappel configuré d'un événement, tel que renvoyé par l'API.
@@ -15,28 +13,14 @@ import java.util.Locale;
  */
 public record EventReminder(long minutesBefore, Instant remindAt, String status) {
 
-    public enum Status {
-        SCHEDULED, SENT, SKIPPED;
-
-        String value() {
-            return name().toLowerCase(Locale.ROOT);
+    /** Rappels de l'événement, du plus éloigné au plus proche ; aucun rappel : liste vide. */
+    static List<EventReminder> of(Event e) {
+        if (e.getReminders() == null) {
+            return List.of();
         }
-    }
-
-    /**
-     * Rappels de l'événement, reconstitués à partir de son document : programmé ({@code reminderDueAt}),
-     * ou déjà traité ({@code reminderSentAt}, échéance théorique {@code startsAt − leadTime}).
-     * Aucun rappel (événement créé dans le passé) : liste vide.
-     */
-    static List<EventReminder> of(Event e, Duration leadTime) {
-        if (e.getReminderDueAt() != null) {
-            return List.of(new EventReminder(Duration.between(e.getReminderDueAt(), e.getStartsAt()).toMinutes(),
-                    e.getReminderDueAt(), Status.SCHEDULED.value()));
-        }
-        if (e.getReminderSentAt() != null) {
-            Status status = e.getReminderSentAt().isBefore(e.getStartsAt()) ? Status.SENT : Status.SKIPPED;
-            return List.of(new EventReminder(leadTime.toMinutes(), e.getStartsAt().minus(leadTime), status.value()));
-        }
-        return List.of();
+        return e.getReminders().stream()
+                .sorted((a, b) -> Integer.compare(b.getMinutesBefore(), a.getMinutesBefore()))
+                .map(r -> new EventReminder(r.getMinutesBefore(), r.getDueAt(), r.getStatus().value()))
+                .toList();
     }
 }

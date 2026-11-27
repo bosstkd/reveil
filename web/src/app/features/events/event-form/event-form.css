@@ -10,3 +10,10 @@ input { padding: .6rem; border: 1px solid #bbb; border-radius: 6px; font-size: 1
 button { padding: .6rem 1rem; border: 0; border-radius: 6px; background: #3b5bdb; color: #fff; font-size: 1rem; cursor: pointer; }
 button.secondary { background: #fff; color: #3b5bdb; border: 1px solid #3b5bdb; }
 button:disabled { opacity: .6; }
+.reminders { margin: .6rem 0 0; padding: .6rem .8rem; border: 1px solid #ddd; border-radius: 8px; }
+.reminders legend { padding: 0 .3rem; font-weight: 600; }
+.choices { display: flex; flex-wrap: wrap; gap: .5rem; }
+.choice { display: flex; align-items: center; gap: .3rem; padding: .3rem .6rem; border: 1px solid #bbb; border-radius: 999px; cursor: pointer; }
+.choice.chosen { border-color: #3b5bdb; background: #edf2ff; }
+.choice input { padding: 0; }
+button.link { align-self: flex-start; margin-top: .4rem; padding: 0; background: none; color: #3b5bdb; font-size: .9rem; text-decoration: underline; }

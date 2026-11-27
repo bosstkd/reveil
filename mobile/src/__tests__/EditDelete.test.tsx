@@ -40,6 +40,10 @@ const concert = {
   location: 'Olympia',
   past: false,
   warnings: [] as string[],
+  reminders: [
+    { minutesBefore: 1440, remindAt: '2099-12-23T19:30:00Z', status: 'sent' as const },
+    { minutesBefore: 60, remindAt: '2099-12-24T18:30:00Z', status: 'scheduled' as const },
+  ],
 };
 
 type Handler = (init: RequestInit) => Response;
@@ -137,10 +141,28 @@ describe('Modifier un événement', () => {
       time: '22:00',
       timeZone: 'Europe/Paris',
       location: null,
+      reminders: [1440, 60],
     });
     expect(await screen.findByTestId('detail-title')).toHaveTextContent('Concert reporté');
     expect(screen.getByTestId('detail-time')).toHaveTextContent('22:00', { exact: false });
     expect(screen.getByTestId('detail-notice')).toHaveTextContent('Événement modifié.');
+  });
+
+  it('pré-coche les rappels configurés et enregistre la nouvelle sélection', async () => {
+    api({ onPut: (init) => jsonResponse(200, { ...concert, reminders: [] , title: JSON.parse(String(init.body)).title }) });
+    await openConcert();
+    await fireEvent.press(screen.getByTestId('detail-edit'));
+    expect(screen.getByTestId('reminder-1440').props.accessibilityState).toMatchObject({ checked: true });
+    expect(screen.getByTestId('reminder-60').props.accessibilityState).toMatchObject({ checked: true });
+    expect(screen.getByTestId('reminder-15').props.accessibilityState).toMatchObject({ checked: false });
+
+    await fireEvent.press(screen.getByTestId('reminder-60'));
+    await fireEvent.press(screen.getByTestId('reminder-15'));
+    await fireEvent.press(screen.getByTestId('event-submit'));
+
+    await waitFor(() => expect(calls('PUT')).toHaveLength(1));
+    expect(JSON.parse(calls('PUT')[0][1].body).reminders).toEqual([1440, 15]);
+    expect(await screen.findByTestId('reminders-empty')).toBeOnTheScreen();
   });
 
   it('bloque l’enregistrement si le titre est vidé', async () => {

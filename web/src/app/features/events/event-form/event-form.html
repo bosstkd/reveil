@@ -38,6 +38,34 @@
   <label for="event-location">Lieu (facultatif)</label>
   <input id="event-location" type="text" formControlName="location" data-testid="event-location" />
 
+  <fieldset class="reminders" data-testid="event-reminders">
+    <legend>Rappels (jusqu'à {{ maxReminders }})</legend>
+    <div class="choices">
+      @for (minutes of reminderOptions; track minutes) {
+        <label class="choice" [class.chosen]="isReminderChosen(minutes)">
+          <input
+            type="checkbox"
+            [checked]="isReminderChosen(minutes)"
+            [disabled]="isReminderLocked(minutes)"
+            (change)="toggleReminder(minutes)"
+            [attr.data-testid]="'reminder-' + minutes"
+          />
+          {{ reminderDelay(minutes) }}
+        </label>
+      }
+    </div>
+    @if (reminders().length === 0) {
+      <p class="hint" data-testid="reminders-off">Aucun rappel : vous ne serez pas prévenu avant cet événement.</p>
+    } @else {
+      @if (reminders().length >= maxReminders) {
+        <p class="hint" data-testid="reminders-max">{{ maxReminders }} rappels maximum.</p>
+      }
+      <button type="button" class="link" (click)="disableReminders()" data-testid="reminders-disable">
+        Désactiver les rappels
+      </button>
+    }
+  </fieldset>
+
   @if (serverError(); as error) {
     <p class="server-error" role="alert" data-testid="event-error">{{ error }}</p>
   }

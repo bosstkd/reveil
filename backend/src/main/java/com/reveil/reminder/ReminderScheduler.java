@@ -42,7 +42,7 @@ public class ReminderScheduler {
         try {
             long n = reminders.scheduleMissingReminders();
             if (n > 0) {
-                log.info("Rappel programmé pour {} événement(s) existant(s)", n);
+                log.info("Rappels convertis pour {} événement(s) existant(s)", n);
             }
         } catch (RuntimeException e) {
             log.error("Programmation des rappels existants impossible", e);

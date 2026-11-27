@@ -1,10 +1,10 @@
 package com.reveil.event;
 
 import java.time.Instant;
+import java.util.List;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
@@ -13,6 +13,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
  */
 @Document(collection = "events")
 @CompoundIndex(name = "ix_events_owner_starts_at", def = "{'ownerId': 1, 'startsAt': 1}")
+// Rappels programmés échus : {reminders: {$elemMatch: {status: "SCHEDULED", dueAt: {$lte: …}}}} (index multiclé).
+@CompoundIndex(name = "ix_events_reminders_due", def = "{'reminders.status': 1, 'reminders.dueAt': 1}")
 public class Event {
 
     @Id
@@ -36,14 +38,13 @@ public class Event {
     private Instant createdAt;
 
     /**
-     * Échéance du rappel push (UTC). Absent si aucun rappel n'est à envoyer ; retiré atomiquement par le
-     * planificateur au moment de l'envoi. Supprimer l'événement supprime donc aussi son rappel.
+     * Rappels configurés (au plus 3), du plus éloigné au plus proche. Null : document antérieur à la gestion des
+     * rappels multiples (converti au démarrage, voir {@code ReminderQueue#migrateLegacy}).
      */
-    @Indexed(name = "ix_events_reminder_due_at", sparse = true)
-    private Instant reminderDueAt;
+    private List<Reminder> reminders;
 
-    /** Date de traitement du rappel (envoyé, ou abandonné si l'événement avait déjà commencé). */
-    private Instant reminderSentAt;
+    /** Incrémenté à chaque écriture des rappels (planificateur, modification) : contrôle de concurrence optimiste. */
+    private long remindersVersion;
 
     protected Event() {
     }
@@ -56,9 +57,8 @@ public class Event {
         this.ownerId = ownerId;
     }
 
-    /** Programme le rappel à {@code dueAt}. */
-    public void scheduleReminder(Instant dueAt) {
-        this.reminderDueAt = dueAt;
+    public void setReminders(List<Reminder> reminders) {
+        this.reminders = reminders;
     }
 
     public String getId() {
@@ -89,11 +89,11 @@ public class Event {
         return createdAt;
     }
 
-    public Instant getReminderDueAt() {
-        return reminderDueAt;
+    public List<Reminder> getReminders() {
+        return reminders;
     }
 
-    public Instant getReminderSentAt() {
-        return reminderSentAt;
+    public long getRemindersVersion() {
+        return remindersVersion;
     }
 }

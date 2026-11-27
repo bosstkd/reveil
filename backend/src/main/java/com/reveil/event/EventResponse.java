@@ -1,6 +1,5 @@
 package com.reveil.event;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -21,11 +20,11 @@ public record EventResponse(String id, String title, Instant startsAt, LocalDate
 
     public static final String PAST_WARNING = "La date de cet événement est déjà passée";
 
-    static EventResponse of(Event e, Instant now, Duration leadTime) {
+    static EventResponse of(Event e, Instant now) {
         boolean past = e.getStartsAt().isBefore(now);
         return new EventResponse(e.getId(), e.getTitle(), e.getStartsAt(),
                 LocalDateTime.ofInstant(e.getStartsAt(), ZoneId.of(e.getTimeZone())), e.getTimeZone(),
                 e.getLocation(), past, past ? List.of(PAST_WARNING) : List.of(),
-                EventReminder.of(e, leadTime));
+                EventReminder.of(e));
     }
 }

@@ -1,4 +1,14 @@
-import { ReveilEvent, eventDate, eventTime, isPast, timeUntil, userTimeZone } from './event.models';
+import {
+  ReveilEvent,
+  configuredReminders,
+  eventDate,
+  eventTime,
+  isPast,
+  reminderDelay,
+  timeUntil,
+  toggleReminder,
+  userTimeZone,
+} from './event.models';
 
 describe('event.models', () => {
   const now = new Date(2026, 10, 25, 12, 0); // 25/11/2026 12:00, heure locale
@@ -56,5 +66,28 @@ describe('event.models', () => {
     // Fuseau inconnu du navigateur : repli sur l'heure locale renvoyée par l'API.
     expect(eventTime({ ...e, timeZone: 'Mars/Olympus' })).toBe('20:30');
     expect(eventDate({ ...e, timeZone: 'Mars/Olympus' })).toBe('2026-12-24');
+  });
+
+  it('toggleReminder ajoute (trié, 3 au plus) ou retire un délai', () => {
+    expect(toggleReminder([60], 15)).toEqual([60, 15]);
+    expect(toggleReminder([60, 15], 10080)).toEqual([10080, 60, 15]);
+    expect(toggleReminder([10080, 60, 15], 1440)).toEqual([10080, 60, 15]);
+    expect(toggleReminder([10080, 60, 15], 60)).toEqual([10080, 15]);
+  });
+
+  it('configuredReminders reprend les délais proposés d’un événement', () => {
+    const event = {
+      reminders: [
+        { minutesBefore: 15, remindAt: '', status: 'sent' },
+        { minutesBefore: 10080, remindAt: '', status: 'scheduled' },
+      ],
+    } as ReveilEvent;
+    expect(configuredReminders(event)).toEqual([10080, 15]);
+  });
+
+  it('reminderDelay affiche les semaines', () => {
+    expect(reminderDelay(10080)).toBe('1 semaine avant');
+    expect(reminderDelay(1440)).toBe('1 jour avant');
+    expect(reminderDelay(15)).toBe('15 min avant');
   });
 });

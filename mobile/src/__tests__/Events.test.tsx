@@ -187,6 +187,51 @@ describe('Événements (mobile)', () => {
     expect(await screen.findByTestId('events-load-error')).toHaveTextContent('Impossible de charger vos événements.');
   });
 
+  it('propose 4 délais de rappel (1 h par défaut), 3 au plus, du plus éloigné au plus proche', async () => {
+    let body: Record<string, unknown> = {};
+    api([], (_url, init) => {
+      body = JSON.parse(String(init?.body));
+      return jsonResponse(201, created());
+    });
+    await openForm();
+    expect(screen.getByTestId('reminder-15')).toHaveTextContent('15 min avant');
+    expect(screen.getByTestId('reminder-60')).toHaveTextContent('1 h avant', { exact: false });
+    expect(screen.getByTestId('reminder-1440')).toHaveTextContent('1 jour avant');
+    expect(screen.getByTestId('reminder-10080')).toHaveTextContent('1 semaine avant');
+    expect(screen.getByTestId('reminder-60').props.accessibilityState).toMatchObject({ checked: true });
+
+    await fireEvent.press(screen.getByTestId('reminder-15'));
+    await fireEvent.press(screen.getByTestId('reminder-10080'));
+    expect(screen.getByTestId('reminders-max')).toHaveTextContent('3 rappels maximum.');
+    expect(screen.getByTestId('reminder-1440').props.accessibilityState).toMatchObject({ disabled: true });
+    await fireEvent.press(screen.getByTestId('reminder-1440')); // ignoré : maximum atteint
+
+    await fireEvent.changeText(screen.getByTestId('event-title'), 'Mariage');
+    await pick('event-date', new Date(2099, 5, 20));
+    await pick('event-time', new Date(2000, 0, 1, 15, 0));
+    await fireEvent.press(screen.getByTestId('event-submit'));
+    await waitFor(() => expect(postCalls()).toHaveLength(1));
+    expect(body.reminders).toEqual([10080, 60, 15]);
+  });
+
+  it('permet de désactiver tous les rappels', async () => {
+    let body: Record<string, unknown> = {};
+    api([], (_url, init) => {
+      body = JSON.parse(String(init?.body));
+      return jsonResponse(201, created());
+    });
+    await openForm();
+    await fireEvent.press(screen.getByTestId('reminders-disable'));
+    expect(screen.getByTestId('reminders-off')).toHaveTextContent('Aucun rappel', { exact: false });
+
+    await fireEvent.changeText(screen.getByTestId('event-title'), 'Discret');
+    await pick('event-date', new Date(2099, 5, 20));
+    await pick('event-time', new Date(2000, 0, 1, 15, 0));
+    await fireEvent.press(screen.getByTestId('event-submit'));
+    await waitFor(() => expect(postCalls()).toHaveLength(1));
+    expect(body.reminders).toEqual([]);
+  });
+
   it('bloque la création sans titre, date ni heure', async () => {
     api([]);
     await openForm();
@@ -221,6 +266,7 @@ describe('Événements (mobile)', () => {
       time: '20:30',
       timeZone: deviceTimeZone(),
       location: 'Olympia',
+      reminders: [60],
     });
     const [, init] = postCalls()[0];
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt');
