@@ -40,6 +40,17 @@ public class PhotoController {
         return photoService.upload(current.id(), eventId, file);
     }
 
+    /**
+     * {@code POST} multipart, parties {@code files} (1 à 10 fichiers JPEG ou PNG) : chaque fichier est traité
+     * indépendamment ; {@code 200} avec les photos enregistrées et les fichiers refusés.
+     */
+    @PostMapping(path = "/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public BatchUploadResponse uploadAll(@PathVariable String eventId,
+                                         @RequestPart(name = "files", required = false) List<MultipartFile> files,
+                                         @AuthenticationPrincipal AuthenticatedUser current) {
+        return photoService.uploadAll(current.id(), eventId, files);
+    }
+
     @GetMapping
     public List<PhotoResponse> list(@PathVariable String eventId, @AuthenticationPrincipal AuthenticatedUser current) {
         return photoService.list(current.id(), eventId);

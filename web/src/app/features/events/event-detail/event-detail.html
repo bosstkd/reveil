@@ -37,9 +37,9 @@
         <div class="actions">
           <button type="button" (click)="startEditing()" data-testid="detail-edit">Modifier</button>
           <button type="button" class="primary" (click)="choosePhoto()" [disabled]="uploading()" data-testid="add-photo">
-            {{ uploading() ? 'Envoi en cours…' : '📷 Ajouter une photo' }}
+            {{ uploading() ? 'Envoi en cours…' : '🖼️ Ajouter des photos' }}
           </button>
-          <input #fileInput type="file" [accept]="accept" capture="environment" hidden
+          <input #fileInput type="file" [accept]="accept" multiple hidden
                  (change)="onFileSelected(fileInput)" data-testid="photo-input" />
         </div>
       </article>
@@ -48,12 +48,26 @@
     @if (notice(); as message) {
       <p class="notice" role="status" data-testid="detail-notice">{{ message }}</p>
     }
-    @if (uploadError(); as message) {
-      <p class="error" role="alert" data-testid="upload-error">{{ message }}</p>
+    @if (uploadErrors().length) {
+      <ul class="error upload-errors" role="alert" data-testid="upload-error">
+        @for (message of uploadErrors(); track $index) {
+          <li data-testid="upload-error-item">{{ message }}</li>
+        }
+      </ul>
     }
 
     <section class="photos" aria-labelledby="photos-title">
       <h2 id="photos-title">Photos</h2>
+      <div class="drop-zone" [class.dragging]="dragging()" [class.busy]="uploading()" data-testid="drop-zone"
+           (dragenter)="onDragOver($event)" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)"
+           (drop)="onDrop($event)">
+        @if (progress(); as step) {
+          <p role="status" data-testid="upload-progress">{{ step }}</p>
+        } @else {
+          <p>Glissez-déposez vos photos ici</p>
+        }
+        <p class="muted hint">JPEG, PNG ou HEIC · 15 Mo maximum par photo</p>
+      </div>
       @if (photosError(); as message) {
         <p class="error" data-testid="photos-error">{{ message }}</p>
       } @else if (photos() === null) {

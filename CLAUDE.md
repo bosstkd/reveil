@@ -24,6 +24,11 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
 - Envoi « une seule fois » : le statut passe à SENT par `findAndModify` atomique **avant** l'envoi (`ReminderQueue`).
 - Écritures concurrentes : `findAndModify` ciblé, jamais `save()` d'un document relu pour une modification.
 - `data-testid` sur les éléments testés (web : attribut ; mobile : `testID`).
+- Photos (stories 6, 10) : l'API n'accepte que JPEG/PNG (signature du contenu), ≤ 15 Mo/fichier (`PhotoSettings`).
+  Envoi unitaire `POST .../photos` (partie `file`, caméra mobile) et multiple `POST .../photos/batch` (parties `files`,
+  ≤ 10, traitement fichier par fichier → `{photos, rejected}`). Limite multipart Spring 60 Mo = nginx 61m (garder
+  alignés). Mobile : tout est recompressé en JPEG (`expo-image-manipulator`). Web : HEIC converti en JPEG côté
+  navigateur (`heic-to`, import dynamique dans `HeicConverter`, simulé dans les tests) ; règles `photo.models.ts`.
 
 ## Commandes
 - Tout vérifier : `./devpilot-verify.sh` (backend `mvn test`, web `ng test` + build prod, mobile `jest` + `tsc`).
@@ -35,4 +40,5 @@ Application de rappels d'événements avec photos. Détail fonctionnel et API : 
 
 ## Historique des stories
 1–3 compte / connexion / sessions · 4 liste des événements · 5 rappel push 1 h avant · 6 photos · 7 modifier/supprimer
-· 8 détail · 9 choix des rappels (jusqu'à 3 délais, désactivation, envoi unique).
+· 8 détail · 9 choix des rappels (jusqu'à 3 délais, désactivation, envoi unique) · 10 import galerie (mobile 10 max,
+web glisser-déposer JPEG/PNG/HEIC ≤ 15 Mo, `photos/batch`).

@@ -211,4 +211,78 @@ class PhotoIntegrationTest {
         mvc.perform(get("/api/events/" + kept + "/photos").header("Authorization", alice))
                 .andExpect(jsonPath("$.length()").value(1));
     }
+
+    private static MockMultipartFile part(String name, byte[] data, String type) {
+        return new MockMultipartFile("files", name, type, data);
+    }
+
+    @Test
+    void batchOfTenPhotosIsStoredInOneRequestAndRejectedFilesAreReported() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String eventId = createEvent(alice);
+        var request = multipart("/api/events/" + eventId + "/photos/batch");
+        for (int i = 0; i < 8; i++) {
+            request.file(part("photo" + i + ".jpg", TestImages.jpeg(100 + i, 50), "image/jpeg"));
+        }
+        request.file(part("dessin.png", TestImages.png(30, 30), "image/png"));
+        request.file(part("notes.pdf", "%PDF-1.7".getBytes(), "image/jpeg"));
+
+        mvc.perform(request.header("Authorization", alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.photos.length()").value(9))
+                .andExpect(jsonPath("$.photos[0].width").value(100))
+                .andExpect(jsonPath("$.photos[8].contentType").value("image/png"))
+                .andExpect(jsonPath("$.rejected.length()").value(1))
+                .andExpect(jsonPath("$.rejected[0].index").value(9))
+                .andExpect(jsonPath("$.rejected[0].filename").value("notes.pdf"))
+                .andExpect(jsonPath("$.rejected[0].status").value(415));
+
+        assertThat(photos.count()).isEqualTo(9);
+        assertThat(mongo.getCollection("fs.files").countDocuments()).isEqualTo(18);
+        mvc.perform(get("/api/events/" + eventId + "/photos").header("Authorization", alice))
+                .andExpect(jsonPath("$.length()").value(9));
+    }
+
+    @Test
+    void batchOfElevenPhotosOrForAnotherUsersEventIsRefusedAndNothingIsStored() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String bob = tokenFor("bob@example.com");
+        String eventId = createEvent(alice);
+        var tooMany = multipart("/api/events/" + eventId + "/photos/batch");
+        for (int i = 0; i < 11; i++) {
+            tooMany.file(part("p" + i + ".jpg", TestImages.jpeg(10, 10), "image/jpeg"));
+        }
+        mvc.perform(tooMany.header("Authorization", alice))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Trop de photos : 10 au maximum par envoi"));
+        mvc.perform(multipart("/api/events/" + eventId + "/photos/batch")
+                        .file(part("a.jpg", TestImages.jpeg(10, 10), "image/jpeg")).header("Authorization", bob))
+                .andExpect(status().isNotFound());
+        mvc.perform(multipart("/api/events/" + eventId + "/photos/batch").header("Authorization", alice))
+                .andExpect(status().isBadRequest());
+        assertThat(photos.count()).isZero();
+        assertThat(mongo.getCollection("fs.files").countDocuments()).isZero();
+    }
+
+    /** Critère « 15 Mo maximum » : un fichier de 12 Mo passe, un fichier de plus de 15 Mo est refusé (413). */
+    @Test
+    void photoOfTwelveMegabytesIsAcceptedAndOneOverFifteenMegabytesIsRefused() throws Exception {
+        String alice = tokenFor("alice@example.com");
+        String eventId = createEvent(alice);
+        byte[] png = TestImages.noisePng(2000, 2000);
+        assertThat(png.length).isBetween(11_000_000, 15 * 1024 * 1024);
+        mvc.perform(multipart("/api/events/" + eventId + "/photos").file(file(png, "image/png"))
+                        .header("Authorization", alice))
+                .andExpect(status().isCreated());
+
+        byte[] big = new byte[15 * 1024 * 1024 + 1];
+        System.arraycopy(TestImages.jpeg(10, 10), 0, big, 0, 3);
+        mvc.perform(multipart("/api/events/" + eventId + "/photos/batch")
+                        .file(part("enorme.jpg", big, "image/jpeg")).header("Authorization", alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.photos.length()").value(0))
+                .andExpect(jsonPath("$.rejected[0].status").value(413))
+                .andExpect(jsonPath("$.rejected[0].message").value("Photo trop volumineuse (maximum 15 Mo)"));
+        assertThat(photos.count()).isEqualTo(1);
+    }
 }

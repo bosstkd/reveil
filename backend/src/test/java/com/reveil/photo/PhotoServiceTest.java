@@ -26,7 +26,7 @@ class PhotoServiceTest {
     private final EventRepository events = mock(EventRepository.class);
     private final PhotoRepository photos = mock(PhotoRepository.class);
     private final PhotoStorage storage = mock(PhotoStorage.class);
-    private final PhotoSettings settings = new PhotoSettings(DataSize.ofMegabytes(1), 50_000_000, 400);
+    private final PhotoSettings settings = new PhotoSettings(DataSize.ofMegabytes(1), 50_000_000, 400, 10);
     private final PhotoService service = new PhotoService(events, photos, storage, new ImageProcessor(settings), settings);
 
     @BeforeEach
@@ -97,5 +97,71 @@ class PhotoServiceTest {
     void contentOfAnUnknownPhotoIsNotFound() {
         when(photos.findByIdAndEventIdAndOwnerId("p1", "e1", "u2")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.content("u2", "e1", "p1", false)).isInstanceOf(PhotoNotFoundException.class);
+    }
+
+    private static MockMultipartFile named(String name, byte[] data) {
+        return new MockMultipartFile("files", name, "image/jpeg", data);
+    }
+
+    @Test
+    void batchStoresEachValidFileAndReportsTheRejectedOnesWithoutStoppingTheOthers() {
+        byte[] big = new byte[(int) DataSize.ofMegabytes(1).toBytes() + 1];
+        big[0] = (byte) 0xFF;
+        big[1] = (byte) 0xD8;
+        big[2] = (byte) 0xFF;
+        BatchUploadResponse result = service.uploadAll("u1", "e1", java.util.List.of(
+                named("a.jpg", TestImages.jpeg(100, 80)),
+                named("anim.gif", "GIF89a....".getBytes()),
+                named("b.jpg", TestImages.jpeg(60, 40)),
+                named("enorme.jpg", big),
+                named("vide.jpg", new byte[0])));
+
+        assertThat(result.photos()).extracting(PhotoResponse::width).containsExactly(100, 60);
+        assertThat(result.rejected()).extracting(BatchUploadResponse.RejectedFile::index).containsExactly(1, 3, 4);
+        assertThat(result.rejected()).extracting(BatchUploadResponse.RejectedFile::filename)
+                .containsExactly("anim.gif", "enorme.jpg", "vide.jpg");
+        assertThat(result.rejected()).extracting(BatchUploadResponse.RejectedFile::status).containsExactly(415, 413, 400);
+        assertThat(result.rejected().get(1).message()).isEqualTo("Photo trop volumineuse (maximum 1 Mo)");
+        verify(photos, org.mockito.Mockito.times(2)).save(any());
+    }
+
+    @Test
+    void batchOfMoreThanTenFilesIsRefusedAsAWhole() {
+        java.util.List<org.springframework.web.multipart.MultipartFile> files = new java.util.ArrayList<>();
+        for (int i = 0; i < 11; i++) {
+            files.add(named(i + ".jpg", TestImages.jpeg(10, 10)));
+        }
+        assertThatThrownBy(() -> service.uploadAll("u1", "e1", files))
+                .isInstanceOfSatisfying(InvalidPhotoException.class, e -> {
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(e.getMessage()).isEqualTo("Trop de photos : 10 au maximum par envoi");
+                });
+        verify(storage, never()).store(any(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void emptyBatchIsRefusedAndUnknownEventIsNotFound() {
+        assertThatThrownBy(() -> service.uploadAll("u1", "e1", java.util.List.of()))
+                .isInstanceOfSatisfying(InvalidPhotoException.class,
+                        e -> assertThat(e.getMessage()).isEqualTo(PhotoService.EMPTY));
+        assertThatThrownBy(() -> service.uploadAll("u1", "e1", null)).isInstanceOf(InvalidPhotoException.class);
+        assertThatThrownBy(() -> service.uploadAll("u2", "e1", java.util.List.of(named("a.jpg", TestImages.jpeg(10, 10)))))
+                .isInstanceOf(EventNotFoundException.class);
+    }
+
+    @Test
+    void storageFailureOfOneFileIsReportedAndTheNextFilesAreStillStored() {
+        when(photos.save(any()))
+                .thenThrow(new IllegalStateException("base indisponible"))
+                .thenAnswer(inv -> inv.getArgument(0));
+        BatchUploadResponse result = service.uploadAll("u1", "e1",
+                java.util.List.of(named("a.jpg", TestImages.jpeg(10, 10)), named("b.jpg", TestImages.jpeg(20, 10))));
+
+        assertThat(result.photos()).extracting(PhotoResponse::width).containsExactly(20);
+        assertThat(result.rejected()).singleElement().satisfies(r -> {
+            assertThat(r.index()).isZero();
+            assertThat(r.status()).isEqualTo(500);
+            assertThat(r.message()).isEqualTo(PhotoService.STORE_FAILED);
+        });
     }
 }

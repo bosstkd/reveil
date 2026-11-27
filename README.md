@@ -172,8 +172,8 @@ Liste vide si aucun rappel (événement créé dans le passé). Le temps restant
 Écran / page de détail (web : `/evenements/:id`, ouvert depuis le titre d'un événement de la liste ; mobile : appui
 sur un événement) : titre, date, heure (fuseau de saisie), lieu, temps restant (rafraîchi chaque minute), rappels
 (« 1 h avant · 24 déc. 2026, 19:30 · programmé »), galerie de miniatures (la plus récente d'abord), boutons
-« Modifier » (formulaire pré-rempli) et ajout de photo (mobile : « Prendre une photo » ; web : « Ajouter une photo »,
-sélecteur de fichier JPEG/PNG ≤ 10 Mo, appareil photo proposé sur navigateur mobile). Sur le web, les miniatures
+« Modifier » (formulaire pré-rempli) et ajout de photos (mobile : « Prendre une photo » et « Choisir dans la galerie » ;
+web : « Ajouter des photos » et glisser-déposer, voir « Import depuis la galerie »). Sur le web, les miniatures
 (routes protégées) sont téléchargées avec le jeton puis affichées via des URL `blob:` locales, libérées en quittant
 la page.
 
@@ -257,12 +257,24 @@ générée côté serveur (plus grand côté 400 px, `reveil.photos.thumbnail-si
 ### `POST /api/events/{id}/photos` (protégé, `multipart/form-data`, partie `file`)
 
 - Type contrôlé **sur le contenu** (signature) : JPEG ou PNG uniquement, le type déclaré est ignoré.
-- Taille ≤ 10 Mo (`reveil.photos.max-size`, `spring.servlet.multipart.*`, nginx `client_max_body_size 11m`) ;
-  dimensions ≤ 50 Mpx (`reveil.photos.max-pixels`), vérifiées avant décodage.
+- Taille ≤ 15 Mo par fichier (`reveil.photos.max-size`, contrôlée par l'application) ; requête multipart ≤ 60 Mo
+  (`spring.servlet.multipart.*`, nginx `client_max_body_size 61m`) ; dimensions ≤ 50 Mpx (`reveil.photos.max-pixels`),
+  vérifiées avant décodage. Un HEIC reçu tel quel → `415` « Format HEIC non pris en charge par le serveur… ».
 - `201` → `{ "id", "eventId", "contentType", "size", "width", "height", "createdAt",
   "url": "/api/events/{id}/photos/{photoId}/content", "thumbnailUrl": ".../thumbnail" }`
 - `400` fichier absent/vide/illisible · `404` événement inconnu ou d'un autre utilisateur · `413` trop volumineux ·
   `415` type non pris en charge. Corps : `{ "message", "errors": [{ "field": "file", ... }] }`.
+
+### `POST /api/events/{id}/photos/batch` (protégé, `multipart/form-data`, parties `files`)
+
+Envoi multiple : 1 à 10 fichiers (`reveil.photos.max-batch-files`), mêmes contrôles que l'envoi unitaire, **fichier par
+fichier** (un fichier refusé n'empêche pas les autres d'être enregistrés).
+
+- `200` → `{ "photos": [ <photo>, ... ], "rejected": [{ "index": 1, "filename": "anim.gif", "status": 415,
+  "message": "Format non pris en charge : ..." }] }` (`photos` dans l'ordre d'envoi ; `status` : celui qu'aurait reçu
+  un envoi unitaire, 400/413/415, ou 500 si l'enregistrement a échoué).
+- `400` aucun fichier ou plus de 10 (« Trop de photos : 10 au maximum par envoi ») · `404` événement · `413` requête
+  > 60 Mo.
 
 ### `GET /api/events/{id}/photos` (protégé)
 
@@ -283,3 +295,20 @@ Octets de l'image d'origine / de la miniature (`Cache-Control: private, max-age=
   part en quelques secondes en 4G. Envoi abandonné après 30 s.
 - **Échec d'envoi** (réseau, 5xx, délai) : message d'erreur et bouton « Réessayer », qui renvoie la photo
   déjà compressée sans reprendre de vue. La photo envoyée apparaît en tête de la galerie sans rechargement.
+
+### Import depuis la galerie (story 10)
+
+- **Mobile** : bouton « Choisir dans la galerie (10 max.) » → sélecteur système (`launchImageLibraryAsync`,
+  `allowsMultipleSelection`, `selectionLimit: 10`). Aucune autorisation demandée (PHPicker iOS 14+, Photo Picker
+  Android). Si le système rend plus de 10 photos (anciens Android), seules les 10 premières sont gardées (message).
+  Formats JPEG, PNG, HEIC (type MIME, à défaut extension) ; autres formats refusés avec un message par photo. Chaque
+  photo est compressée comme une prise de vue (≤ 2048 px, JPEG 0,8) puis le lot part en **un seul envoi**
+  (`photos/batch`, délai 30 s + 10 s par photo supplémentaire). Refus de l'API : message par photo ; échec réseau :
+  « Réessayer » renvoie le même lot.
+- **Web** : bouton « Ajouter des photos » (sélecteur multiple) ou **glisser-déposer** sur la zone de la section Photos
+  (un fichier lâché à côté de la zone n'ouvre pas le fichier dans l'onglet). Formats **JPEG, PNG ou HEIC**, **15 Mo
+  maximum** par fichier : sinon refus local avec un message explicite par fichier (« « a.gif » : format non pris en
+  charge (JPEG, PNG ou HEIC uniquement). », « « b.jpg » : fichier trop volumineux (16,2 Mo ; maximum 15 Mo). »).
+  Les HEIC sont **convertis en JPEG dans le navigateur** (bibliothèque `heic-to`, libheif WebAssembly, LGPL-3.0,
+  chargée à la demande : ~3,2 Mo / 0,5 Mo compressé) car l'API ne lit que JPEG/PNG. Envoi par lots
+  (`photos/batch`, ≤ 10 fichiers et ≤ 45 Mo par requête), photos ajoutées en tête de la galerie.

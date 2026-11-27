@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { EventPhoto, relativeApiUrl } from './photo.models';
+import { BatchUploadResult, EventPhoto, relativeApiUrl } from './photo.models';
 
 /** Photos d'un événement. Chemins relatifs : fonctionne sous n'importe quel base href. */
 @Injectable({ providedIn: 'root' })
@@ -18,10 +18,10 @@ export class PhotoService {
     return this.http.get(relativeApiUrl(photo.thumbnailUrl), { responseType: 'blob' });
   }
 
-  /** Envoi multipart (partie « file »). */
-  upload(eventId: string, file: File): Observable<EventPhoto> {
+  /** Envoi multiple (parties « files », 10 au plus) : photos enregistrées et fichiers refusés. */
+  uploadAll(eventId: string, files: File[]): Observable<BatchUploadResult> {
     const body = new FormData();
-    body.append('file', file, file.name);
-    return this.http.post<EventPhoto>(`api/events/${encodeURIComponent(eventId)}/photos`, body);
+    files.forEach((file) => body.append('files', file, file.name));
+    return this.http.post<BatchUploadResult>(`api/events/${encodeURIComponent(eventId)}/photos/batch`, body);
   }
 }

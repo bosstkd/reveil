@@ -126,4 +126,33 @@ class PhotoControllerTest {
     void contentRequiresAuthentication() throws Exception {
         mvc.perform(get("/api/events/e1/photos/p1/content")).andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void batchUploadPassesAllTheFilesAndReturnsSavedAndRejectedOnes() throws Exception {
+        when(photoService.uploadAll(eq("u1"), eq("e1"), any())).thenReturn(new BatchUploadResponse(List.of(photo()),
+                List.of(new BatchUploadResponse.RejectedFile(1, "anim.gif", 415, ImageProcessor.UNSUPPORTED))));
+        MockMultipartFile a = new MockMultipartFile("files", "a.jpg", "image/jpeg", new byte[]{1});
+        MockMultipartFile b = new MockMultipartFile("files", "anim.gif", "image/gif", new byte[]{2});
+
+        mvc.perform(multipart("/api/events/e1/photos/batch").file(a).file(b).header("Authorization", "Bearer good"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.photos[0].id").value("p1"))
+                .andExpect(jsonPath("$.rejected[0].index").value(1))
+                .andExpect(jsonPath("$.rejected[0].filename").value("anim.gif"))
+                .andExpect(jsonPath("$.rejected[0].status").value(415))
+                .andExpect(jsonPath("$.rejected[0].message").value(ImageProcessor.UNSUPPORTED));
+        verify(photoService).uploadAll(eq("u1"), eq("e1"),
+                org.mockito.ArgumentMatchers.argThat(files -> files != null && files.size() == 2));
+    }
+
+    @Test
+    void batchUploadRequiresAuthenticationAndReportsARefusedBatch() throws Exception {
+        MockMultipartFile a = new MockMultipartFile("files", "a.jpg", "image/jpeg", new byte[]{1});
+        mvc.perform(multipart("/api/events/e1/photos/batch").file(a)).andExpect(status().isUnauthorized());
+        when(photoService.uploadAll(eq("u1"), eq("e1"), any()))
+                .thenThrow(new InvalidPhotoException(HttpStatus.BAD_REQUEST, "Trop de photos : 10 au maximum par envoi"));
+        mvc.perform(multipart("/api/events/e1/photos/batch").file(a).header("Authorization", "Bearer good"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Trop de photos : 10 au maximum par envoi"));
+    }
 }

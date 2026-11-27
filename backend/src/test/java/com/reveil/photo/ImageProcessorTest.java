@@ -15,7 +15,7 @@ import org.springframework.util.unit.DataSize;
 
 class ImageProcessorTest {
 
-    private final ImageProcessor processor = new ImageProcessor(new PhotoSettings(DataSize.ofMegabytes(10), 50_000_000, 400));
+    private final ImageProcessor processor = new ImageProcessor(new PhotoSettings(DataSize.ofMegabytes(10), 50_000_000, 400, 10));
 
     private static BufferedImage read(byte[] data) throws IOException {
         return ImageIO.read(new ByteArrayInputStream(data));
@@ -82,9 +82,33 @@ class ImageProcessorTest {
 
     @Test
     void oversizedDimensionsAreRejectedBeforeDecoding() {
-        ImageProcessor strict = new ImageProcessor(new PhotoSettings(DataSize.ofMegabytes(10), 100 * 100, 400));
+        ImageProcessor strict = new ImageProcessor(new PhotoSettings(DataSize.ofMegabytes(10), 100 * 100, 400, 10));
         assertThatThrownBy(() -> strict.process(TestImages.jpeg(101, 100)))
                 .isInstanceOfSatisfying(InvalidPhotoException.class,
                         e -> assertThat(e.getStatus()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
+    }
+
+    /** En-tête ISO-BMFF {@code ftyp} d'une photo HEIC d'iPhone. */
+    static byte[] heicHeader(String brand) {
+        byte[] data = new byte[64];
+        data[3] = 0x18;
+        byte[] ftyp = ("ftyp" + brand + "\0\0\0\0mif1heic").getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(ftyp, 0, data, 4, ftyp.length);
+        return data;
+    }
+
+    @Test
+    void heicThatWasNotConvertedIsRejectedWithAnExplicitMessage() {
+        for (String brand : new String[] {"heic", "heix", "mif1"}) {
+            assertThatThrownBy(() -> processor.process(heicHeader(brand)))
+                    .isInstanceOfSatisfying(InvalidPhotoException.class, e -> {
+                        assertThat(e.getStatus()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+                        assertThat(e.getMessage()).isEqualTo(ImageProcessor.HEIC_NOT_CONVERTED);
+                    });
+        }
+        // Autre conteneur ISO-BMFF (vidéo MP4) : message générique.
+        assertThatThrownBy(() -> processor.process(heicHeader("isom")))
+                .isInstanceOfSatisfying(InvalidPhotoException.class,
+                        e -> assertThat(e.getMessage()).isEqualTo(ImageProcessor.UNSUPPORTED));
     }
 }

@@ -4,25 +4,36 @@ import { useAuth } from '../auth/AuthContext';
 import { API_URL } from '../config';
 import { ReveilEvent, eventDate, eventTime, reminderLabel, timeUntil } from '../events/events';
 import { EVENT_NOT_FOUND, deleteEvent, getEvent } from '../events/eventsApi';
-import { compressPhoto, ensureCameraPermission, takePhoto } from '../photos/camera';
-import type { EventPhoto, PreparedPhoto } from '../photos/photos';
-import { listPhotos, uploadPhoto } from '../photos/photosApi';
+import { compressPhoto, ensureCameraPermission, pickFromGallery, takePhoto } from '../photos/camera';
+import {
+  type EventPhoto,
+  type PreparedPhoto,
+  SELECTION_TRUNCATED,
+  photoName,
+  rejectReason,
+} from '../photos/photos';
+import { listPhotos, uploadPhoto, uploadPhotos } from '../photos/photosApi';
 import { EventForm } from './EventForm';
 
 export const CAMERA_DENIED = "L'accès à l'appareil photo est nécessaire pour prendre une photo.";
 export const CAMERA_BLOCKED = "L'accès à l'appareil photo a été refusé. Autorisez-le dans les réglages de l'appareil.";
 export const PREPARE_FAILED = 'Impossible de préparer la photo. Réessayez.';
+export const GALLERY_FAILED = "Impossible d'ouvrir la galerie. Réessayez.";
 export const DELETE_TITLE = "Supprimer l'événement ?";
 export const DELETE_MESSAGE = 'Ses rappels programmés et ses photos seront aussi supprimés. Cette action est définitive.';
 
-type Busy = 'idle' | 'camera' | 'preparing' | 'uploading';
+type Busy = 'idle' | 'camera' | 'gallery' | 'preparing' | 'uploading';
+
+/** Envoi en échec, renvoyé tel quel par « Réessayer » : une photo (appareil photo) ou un lot (galerie). */
+type Pending = { kind: 'single'; photo: PreparedPhoto } | { kind: 'batch'; photos: PreparedPhoto[] };
 
 /** Rafraîchissement du temps restant affiché. */
 export const CLOCK_TICK_MS = 60_000;
 
 /**
  * Détail d'un événement (depuis la liste, une notification de rappel ou un lien reveil://events/<id>) :
- * titre, date, heure, lieu, temps restant (rafraîchi chaque minute), rappels configurés, galerie de miniatures, la prise de photo, la modification et la suppression (après confirmation).
+ * titre, date, heure, lieu, temps restant (rafraîchi chaque minute), rappels configurés, galerie de miniatures, la prise de photo,
+ * l'import depuis la galerie (10 photos au plus, envoyées en un seul envoi), la modification et la suppression (après confirmation).
  * Après suppression, l'écran se ferme (`onBack`) : la liste, remontée, est rechargée.
  */
 export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack: () => void }) {
@@ -34,8 +45,10 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
   const [busy, setBusy] = useState<Busy>('idle');
   const [cameraNotice, setCameraNotice] = useState<{ message: string; blocked: boolean } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  /** Photo compressée dont l'envoi a échoué : renvoyée telle quelle par « Réessayer ». */
-  const [pending, setPending] = useState<PreparedPhoto | null>(null);
+  /** Photo(s) compressée(s) dont l'envoi a échoué : renvoyée(s) telle(s) quelle(s) par « Réessayer ». */
+  const [pending, setPending] = useState<Pending | null>(null);
+  /** Photos de la galerie refusées (format, préparation, refus de l'API) ; une ligne par photo. */
+  const [importErrors, setImportErrors] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -88,7 +101,7 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
         setPhotos((list) => [saved, ...(list ?? []).filter((p) => p.id !== saved.id)]);
       } catch (e) {
         if (!mounted.current) return;
-        setPending(photo);
+        setPending({ kind: 'single', photo });
         setUploadError((e as Error).message);
       } finally {
         if (mounted.current) setBusy('idle');
@@ -97,10 +110,86 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
     [authFetch, eventId],
   );
 
-  async function capture() {
+  /** Envoi multiple ; les photos enregistrées apparaissent en tête de la galerie (dernière choisie en premier). */
+  const sendBatch = useCallback(
+    async (batch: PreparedPhoto[]) => {
+      setBusy('uploading');
+      setUploadError(null);
+      try {
+        const result = await uploadPhotos(authFetch, eventId, batch);
+        if (!mounted.current) return;
+        setPending(null);
+        const saved = [...result.photos].reverse();
+        setPhotos((list) => [...saved, ...(list ?? []).filter((p) => !saved.some((s) => s.id === p.id))]);
+        if (result.rejected.length) {
+          setImportErrors((errors) => [
+            ...errors,
+            ...result.rejected.map((r) => `« ${batch[r.index] ? photoName(batch[r.index], r.index) : r.filename} » : ${r.message}`),
+          ]);
+        }
+      } catch (e) {
+        if (!mounted.current) return;
+        setPending({ kind: 'batch', photos: batch });
+        setUploadError((e as Error).message);
+      } finally {
+        if (mounted.current) setBusy('idle');
+      }
+    },
+    [authFetch, eventId],
+  );
+
+  function resetNotices() {
     setCameraNotice(null);
     setUploadError(null);
+    setImportErrors([]);
     setPending(null);
+  }
+
+  /** Import depuis la galerie : contrôle du format, compression (comme une prise de vue), envoi en une fois. */
+  async function importFromGallery() {
+    resetNotices();
+    setBusy('gallery');
+    try {
+      let picked: Awaited<ReturnType<typeof pickFromGallery>>;
+      try {
+        picked = await pickFromGallery();
+      } catch {
+        if (mounted.current) setImportErrors([GALLERY_FAILED]);
+        return;
+      }
+      if (!picked || !mounted.current) return;
+      const errors: string[] = picked.truncated ? [SELECTION_TRUNCATED] : [];
+      const accepted = picked.photos.filter((p, i) => {
+        const reason = rejectReason(p, i);
+        if (reason) errors.push(reason);
+        return !reason;
+      });
+      setImportErrors([...errors]);
+      if (!accepted.length) return;
+      setBusy('preparing');
+      const prepared: PreparedPhoto[] = [];
+      for (const photo of accepted) {
+        try {
+          prepared.push(await compressPhoto(photo));
+        } catch {
+          errors.push(`« ${photoName(photo, picked.photos.indexOf(photo))} » : ${PREPARE_FAILED}`);
+        }
+      }
+      if (!mounted.current) return;
+      setImportErrors([...errors]);
+      if (prepared.length) await sendBatch(prepared);
+    } finally {
+      if (mounted.current) setBusy((b) => (b === 'uploading' ? b : 'idle'));
+    }
+  }
+
+  function retry(p: Pending) {
+    if (p.kind === 'single') void send(p.photo);
+    else void sendBatch(p.photos);
+  }
+
+  async function capture() {
+    resetNotices();
     setBusy('camera');
     try {
       const access = await ensureCameraPermission();
@@ -254,6 +343,17 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
             >
               <Text style={styles.primaryText}>📷 Prendre une photo</Text>
             </Pressable>
+            <Pressable
+              testID="pick-photos"
+              accessibilityRole="button"
+              accessibilityHint="Jusqu'à 10 photos à la fois"
+              accessibilityState={{ disabled: busy !== 'idle' }}
+              disabled={busy !== 'idle'}
+              onPress={() => void importFromGallery()}
+              style={[styles.outline, styles.wide, busy !== 'idle' && styles.disabled]}
+            >
+              <Text style={styles.outlineText}>🖼️ Choisir dans la galerie (10 max.)</Text>
+            </Pressable>
 
             {busy === 'preparing' || busy === 'uploading' ? (
               <View testID="photo-progress" style={styles.row}>
@@ -273,13 +373,23 @@ export function EventDetailScreen({ eventId, onBack }: { eventId: string; onBack
               </View>
             ) : null}
 
+            {importErrors.length ? (
+              <View testID="import-errors" accessibilityRole="alert" style={styles.errorBox}>
+                {importErrors.map((message, i) => (
+                  <Text key={i} testID="import-error" style={styles.error}>
+                    {message}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+
             {uploadError ? (
               <View testID="upload-error" accessibilityRole="alert" style={styles.errorBox}>
                 <Text testID="upload-error-message" style={styles.error}>
                   {uploadError}
                 </Text>
                 {pending && busy === 'idle' ? (
-                  <Pressable testID="retry-upload" accessibilityRole="button" style={styles.outline} onPress={() => void send(pending)}>
+                  <Pressable testID="retry-upload" accessibilityRole="button" style={styles.outline} onPress={() => retry(pending)}>
                     <Text style={styles.outlineText}>Réessayer</Text>
                   </Pressable>
                 ) : null}
@@ -343,6 +453,7 @@ const styles = StyleSheet.create({
   errorBox: { padding: 8, borderRadius: 6, backgroundColor: '#fff5f5', marginBottom: 8 },
   outline: { borderWidth: 1, borderColor: '#3b5bdb', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, alignItems: 'center', alignSelf: 'flex-start' },
   outlineText: { color: '#3b5bdb' },
+  wide: { alignSelf: 'stretch', paddingVertical: 10, marginBottom: 12 },
   gallery: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 8 },
   thumb: { width: 100, height: 100, borderRadius: 4, backgroundColor: '#eee' },
 });

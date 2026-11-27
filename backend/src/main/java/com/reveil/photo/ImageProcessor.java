@@ -8,7 +8,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
+import java.util.Set;
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -21,13 +23,20 @@ import org.springframework.stereotype.Component;
 
 /**
  * Contrôle du contenu d'une image (type réel d'après la signature, dimensions) et génération de la miniature.
- * Seuls JPEG et PNG sont acceptés : le mobile envoie du JPEG compressé ; ImageIO ne lit ni HEIC ni WebP.
+ * Seuls JPEG et PNG sont acceptés : le mobile envoie du JPEG compressé, le web convertit les HEIC en JPEG avant
+ * l'envoi ; ImageIO ne lit ni HEIC ni WebP (un HEIC reçu tel quel est refusé avec un message dédié).
  */
 @Component
 public class ImageProcessor {
 
     static final String UNSUPPORTED = "Format non pris en charge : seules les images JPEG et PNG sont acceptées";
     static final String UNREADABLE = "Image illisible ou corrompue";
+    static final String HEIC_NOT_CONVERTED =
+            "Format HEIC non pris en charge par le serveur : la photo doit être convertie en JPEG avant l'envoi";
+
+    /** Marques ISO-BMFF (boîte {@code ftyp}) des images HEIC / HEIF. */
+    private static final Set<String> HEIF_BRANDS =
+            Set.of("heic", "heix", "heim", "heis", "hevc", "hevx", "hevm", "hevs", "mif1", "msf1");
 
     private static final float THUMBNAIL_QUALITY = 0.8f;
 
@@ -79,7 +88,19 @@ public class ImageProcessor {
                 && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A) {
             return "image/png";
         }
+        if (isHeif(data)) {
+            throw new InvalidPhotoException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, HEIC_NOT_CONVERTED);
+        }
         throw new InvalidPhotoException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, UNSUPPORTED);
+    }
+
+    /** Signature HEIF : {@code ....ftyp<marque>} en tête de fichier. */
+    static boolean isHeif(byte[] data) {
+        if (data.length < 12 || data[4] != 'f' || data[5] != 't' || data[6] != 'y' || data[7] != 'p') {
+            return false;
+        }
+        String brand = new String(data, 8, 4, StandardCharsets.US_ASCII);
+        return HEIF_BRANDS.contains(brand);
     }
 
     /** Miniature JPEG dont le plus grand côté vaut {@code thumbnailSize} (jamais agrandie). Transparence → fond blanc. */

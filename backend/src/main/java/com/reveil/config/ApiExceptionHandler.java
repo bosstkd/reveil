@@ -72,7 +72,7 @@ public class ApiExceptionHandler {
     /** Requête multipart au-delà de spring.servlet.multipart.max-file-size / max-request-size. */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> uploadTooLarge(MaxUploadSizeExceededException e) {
-        String message = "Photo trop volumineuse";
+        String message = "Envoi trop volumineux";
         return body(HttpStatus.PAYLOAD_TOO_LARGE, message, List.of(new FieldError("file", message)));
     }
 

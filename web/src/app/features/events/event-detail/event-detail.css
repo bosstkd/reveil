@@ -17,3 +17,9 @@ button.primary { background: #3b5bdb; color: #fff; }
 button:disabled { opacity: .6; cursor: default; }
 .gallery { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .4rem; }
 .gallery img, .gallery .placeholder { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; background: #eee; }
+.drop-zone { border: 2px dashed #bac8ff; border-radius: 8px; padding: 1rem; text-align: center; color: #3b5bdb; margin-bottom: .6rem; transition: background .15s; }
+.drop-zone p { margin: .2rem 0; }
+.drop-zone .hint { font-size: .85rem; }
+.drop-zone.dragging { background: #edf2ff; border-color: #3b5bdb; }
+.drop-zone.busy { opacity: .7; }
+.upload-errors { padding-left: 1.2rem; }

@@ -4,7 +4,15 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideRouter } from '@angular/router';
 import { CLOCK_TICK_MS, EventDetail, LOAD_FAILED } from './event-detail';
 import { EVENT_GONE, ReveilEvent, reminderDelay } from '../../../core/events/event.models';
-import { EventPhoto, PHOTO_TOO_LARGE, PHOTO_UNSUPPORTED, relativeApiUrl } from '../../../core/photos/photo.models';
+import { HeicConverter } from '../../../core/photos/heic-converter';
+import {
+  EventPhoto,
+  HEIC_CONVERSION_FAILED,
+  PHOTO_ACCEPT,
+  PHOTO_TOO_LARGE,
+  PHOTO_UPLOAD_FAILED,
+  relativeApiUrl,
+} from '../../../core/photos/photo.models';
 
 const concert = (over: Partial<ReveilEvent> = {}): ReveilEvent => ({
   id: 'e1',
@@ -154,56 +162,231 @@ describe('EventDetail', () => {
     expect(q('detail-notice')!.textContent).toContain('Événement modifié.');
   });
 
-  describe('ajout de photo', () => {
-    const select = (file: File) => {
+  describe('import de photos', () => {
+    const MB = 1024 * 1024;
+    const jpeg = (name = 'photo.jpg', size = 3) => new File([new Uint8Array(size)], name, { type: 'image/jpeg' });
+    const errors = () => all('upload-error-item').map((e) => e.textContent!.trim());
+    /** Laisse s'exécuter les promesses en attente (conversion HEIC). */
+    const settle = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      await new Promise((r) => setTimeout(r));
+      render();
+    };
+
+    const select = (...files: File[]) => {
       const input = q<HTMLInputElement>('photo-input')!;
-      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+      Object.defineProperty(input, 'files', { value: files, configurable: true });
       input.dispatchEvent(new Event('change'));
       render();
     };
 
-    it('le bouton ouvre le sélecteur (appareil photo sur mobile)', () => {
+    const dragEvent = (type: string, files: File[] = [], types = ['Files']) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { files, types, dropEffect: 'none' } });
+      return event;
+    };
+
+    const expectBatch = (names: string[]) => {
+      const req = http.expectOne({ method: 'POST', url: 'api/events/e1/photos/batch' });
+      const sent = (req.request.body as FormData).getAll('files') as File[];
+      expect(sent.map((f) => f.name)).toEqual(names);
+      return req;
+    };
+
+    it('le bouton ouvre le sélecteur multiple JPEG / PNG / HEIC', () => {
       open();
       const input = q<HTMLInputElement>('photo-input')!;
-      expect(input.getAttribute('accept')).toBe('image/jpeg,image/png');
-      expect(input.getAttribute('capture')).toBe('environment');
+      expect(input.getAttribute('accept')).toBe(PHOTO_ACCEPT);
+      expect(input.getAttribute('accept')).toContain('.heic');
+      expect(input.multiple).toBe(true);
       const click = vi.spyOn(input, 'click').mockImplementation(() => {});
       q('add-photo')!.click();
       expect(click).toHaveBeenCalled();
     });
 
-    it('envoie la photo et l’ajoute en tête de la galerie', () => {
+    it('envoie les photos choisies en un seul envoi et les ajoute en tête de la galerie', () => {
       open(concert(), [photo('p1')]);
-      select(new File(['img'], 'photo.jpg', { type: 'image/jpeg' }));
+      select(jpeg('a.jpg'), new File(['png'], 'b.png', { type: 'image/png' }));
       expect(q<HTMLButtonElement>('add-photo')!.disabled).toBe(true);
+      expect(q('upload-progress')!.textContent).toContain('Envoi de 2 photos');
 
-      const req = http.expectOne({ method: 'POST', url: 'api/events/e1/photos' });
-      expect((req.request.body as FormData).get('file')).toBeInstanceOf(File);
-      req.flush(photo('p2'));
-      http.expectOne('api/events/e1/photos/p2/thumbnail').flush(new Blob(['y']));
+      expectBatch(['a.jpg', 'b.png']).flush({ photos: [photo('p2'), photo('p3')], rejected: [] });
+      http.expectOne('api/events/e1/photos/p3/thumbnail').flush(new Blob(['3']));
+      http.expectOne('api/events/e1/photos/p2/thumbnail').flush(new Blob(['2']));
       render();
 
+      // La plus récente (dernière envoyée) d'abord.
       expect((all('gallery-photo') as HTMLImageElement[]).map((i) => i.getAttribute('src'))).toEqual([
         'blob:thumb-2',
+        'blob:thumb-3',
         'blob:thumb-1',
       ]);
       expect(q<HTMLButtonElement>('add-photo')!.disabled).toBe(false);
+      expect(q('upload-progress')).toBeNull();
+      expect(q('upload-error')).toBeNull();
     });
 
-    it('refuse localement une photo de plus de 10 Mo', () => {
+    it('glisser-déposer : la zone se met en évidence puis envoie les fichiers déposés', () => {
       open();
-      select(new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'big.jpg', { type: 'image/jpeg' }));
-      expect(q('upload-error')!.textContent).toContain(PHOTO_TOO_LARGE);
-    });
-
-    it('affiche le refus du serveur (format non pris en charge)', () => {
-      open();
-      select(new File(['gif'], 'a.gif', { type: 'image/gif' }));
-      http
-        .expectOne({ method: 'POST', url: 'api/events/e1/photos' })
-        .flush({ message: 'Type non pris en charge', errors: [] }, { status: 415, statusText: 'Unsupported' });
+      const zone = q('drop-zone')!;
+      const over = dragEvent('dragover');
+      zone.dispatchEvent(over);
       render();
-      expect(q('upload-error')!.textContent).toContain(PHOTO_UNSUPPORTED);
+      expect(over.defaultPrevented).toBe(true);
+      expect(zone.classList).toContain('dragging');
+
+      zone.dispatchEvent(dragEvent('dragleave'));
+      render();
+      expect(zone.classList).not.toContain('dragging');
+
+      zone.dispatchEvent(dragEvent('dragenter'));
+      const drop = dragEvent('drop', [jpeg('d.jpg')]);
+      zone.dispatchEvent(drop);
+      render();
+      expect(drop.defaultPrevented).toBe(true);
+      expect(zone.classList).not.toContain('dragging');
+      expectBatch(['d.jpg']).flush({ photos: [photo('p9')], rejected: [] });
+      http.expectOne('api/events/e1/photos/p9/thumbnail').flush(new Blob(['9']));
+      render();
+      expect(all('gallery-photo')).toHaveLength(1);
+    });
+
+    it('ignore un glisser qui ne porte pas de fichiers et empêche un dépôt hors zone d’ouvrir le fichier', () => {
+      open();
+      const text = dragEvent('dragover', [], ['text/plain']);
+      q('drop-zone')!.dispatchEvent(text);
+      render();
+      expect(text.defaultPrevented).toBe(false);
+      expect(q('drop-zone')!.classList).not.toContain('dragging');
+
+      const stray = dragEvent('drop', [jpeg()]);
+      window.dispatchEvent(stray);
+      expect(stray.defaultPrevented).toBe(true);
+      http.expectNone('api/events/e1/photos/batch');
+    });
+
+    it('refuse localement, avec un message explicite, un autre format ou un fichier de plus de 15 Mo, et envoie le reste', () => {
+      open();
+      select(
+        new File(['gif'], 'anim.gif', { type: 'image/gif' }),
+        jpeg('ok.jpg'),
+        new File([new Uint8Array(15 * MB + 1)], 'enorme.jpg', { type: 'image/jpeg' }),
+        new File(['%PDF'], 'notes.pdf', { type: '' }),
+      );
+      expect(errors()).toEqual([
+        '« anim.gif » : format non pris en charge (JPEG, PNG ou HEIC uniquement).',
+        '« enorme.jpg » : fichier trop volumineux (15 Mo ; maximum 15 Mo).',
+        '« notes.pdf » : format non pris en charge (JPEG, PNG ou HEIC uniquement).',
+      ]);
+      expectBatch(['ok.jpg']).flush({ photos: [photo('p2')], rejected: [] });
+      http.expectOne('api/events/e1/photos/p2/thumbnail').flush(new Blob(['2']));
+      render();
+      expect(errors()).toHaveLength(3);
+    });
+
+    it('accepte un fichier de 15 Mo exactement', () => {
+      open();
+      select(new File([new Uint8Array(15 * MB)], 'limite.png', { type: 'image/png' }));
+      expect(q('upload-error')).toBeNull();
+      expectBatch(['limite.png']).flush({ photos: [], rejected: [] });
+    });
+
+    it('rien d’acceptable : aucun envoi', () => {
+      open();
+      select(new File(['x'], 'film.mov', { type: 'video/quicktime' }));
+      http.expectNone('api/events/e1/photos/batch');
+      expect(errors()).toEqual(['« film.mov » : format non pris en charge (JPEG, PNG ou HEIC uniquement).']);
+      expect(q<HTMLButtonElement>('add-photo')!.disabled).toBe(false);
+    });
+
+    it('convertit les photos HEIC en JPEG avant l’envoi', async () => {
+      let done!: (f: File) => void;
+      const toJpeg = vi
+        .spyOn(TestBed.inject(HeicConverter), 'toJpeg')
+        .mockImplementation(() => new Promise<File>((resolve) => (done = resolve)));
+      open();
+      // Hors Safari, un HEIC arrive souvent sans type MIME : reconnu à son extension.
+      select(new File(['heic'], 'IMG_0001.HEIC', { type: '' }), jpeg('a.jpg'));
+      expect(q('upload-progress')!.textContent).toContain('Conversion de « IMG_0001.HEIC »');
+      http.expectNone('api/events/e1/photos/batch');
+
+      done(new File(['jpeg'], 'IMG_0001.jpg', { type: 'image/jpeg' }));
+      await settle();
+      expect(toJpeg).toHaveBeenCalledTimes(1);
+      const req = expectBatch(['IMG_0001.jpg', 'a.jpg']);
+      expect(((req.request.body as FormData).getAll('files') as File[])[0].type).toBe('image/jpeg');
+      req.flush({ photos: [], rejected: [] });
+    });
+
+    it('HEIC trop volumineux une fois converti : refusé avec un message', async () => {
+      vi.spyOn(TestBed.inject(HeicConverter), 'toJpeg').mockResolvedValue(
+        new File([new Uint8Array(16 * MB)], 'IMG.jpg', { type: 'image/jpeg' }),
+      );
+      open();
+      select(new File(['heic'], 'IMG.heic', { type: 'image/heic' }));
+      await settle();
+      http.expectNone('api/events/e1/photos/batch');
+      expect(errors()[0]).toContain('« IMG.heic » : photo trop volumineuse une fois convertie en JPEG (16 Mo');
+      expect(q<HTMLButtonElement>('add-photo')!.disabled).toBe(false);
+    });
+
+    it('HEIC illisible : message pour ce fichier, les autres partent', async () => {
+      vi.spyOn(TestBed.inject(HeicConverter), 'toJpeg').mockRejectedValue(new Error('libheif'));
+      open();
+      select(new File(['?'], 'casse.heic', { type: 'image/heic' }), jpeg('a.jpg'));
+      await settle();
+      expect(errors()).toEqual([`« casse.heic » : ${HEIC_CONVERSION_FAILED}`]);
+      expectBatch(['a.jpg']).flush({ photos: [], rejected: [] });
+    });
+
+    it('affiche les fichiers refusés par l’API, avec leur nom', () => {
+      open();
+      select(jpeg('a.jpg'), jpeg('faux.jpg'));
+      expectBatch(['a.jpg', 'faux.jpg']).flush({
+        photos: [photo('p2')],
+        rejected: [{ index: 1, filename: 'faux.jpg', status: 415, message: 'Format non pris en charge' }],
+      });
+      http.expectOne('api/events/e1/photos/p2/thumbnail').flush(new Blob(['2']));
+      render();
+      expect(errors()).toEqual(['« faux.jpg » : Format non pris en charge']);
+      expect(all('gallery-photo')).toHaveLength(1);
+    });
+
+    it('plus de 10 fichiers : envoyés en plusieurs lots successifs', () => {
+      open();
+      const files = Array.from({ length: 12 }, (_, i) => jpeg(`p${i}.jpg`));
+      select(...files);
+      expectBatch(files.slice(0, 10).map((f) => f.name)).flush({ photos: [], rejected: [] });
+      render();
+      expect(q('upload-progress')!.textContent).toContain('10/12');
+      expectBatch(['p10.jpg', 'p11.jpg']).flush({ photos: [], rejected: [] });
+      render();
+      expect(q('upload-progress')).toBeNull();
+    });
+
+    it('échec d’envoi : message et bouton réactivé', () => {
+      open();
+      select(jpeg('a.jpg'), jpeg('b.jpg'));
+      expectBatch(['a.jpg', 'b.jpg']).flush(null, { status: 503, statusText: 'Unavailable' });
+      render();
+      expect(errors()).toEqual([`2 photos non envoyées : ${PHOTO_UPLOAD_FAILED}`]);
+      expect(q<HTMLButtonElement>('add-photo')!.disabled).toBe(false);
+    });
+
+    it('envoi refusé en bloc (413) : message de taille', () => {
+      open();
+      select(jpeg('a.jpg'));
+      expectBatch(['a.jpg']).flush({ message: 'Envoi trop volumineux', errors: [] }, { status: 413, statusText: 'Too Large' });
+      render();
+      expect(errors()).toEqual([PHOTO_TOO_LARGE]);
+    });
+
+    it('événement supprimé entre-temps (404) : message dédié', () => {
+      open();
+      select(jpeg('a.jpg'));
+      expectBatch(['a.jpg']).flush({ message: 'Événement introuvable', errors: [] }, { status: 404, statusText: 'Not Found' });
+      render();
+      expect(q('detail-error')!.textContent).toContain(EVENT_GONE);
     });
   });
 

@@ -31,6 +31,7 @@ jest.mock('expo-image-picker', () => ({
     canceled: false,
     assets: [{ uri: 'file:///camera/photo.jpg', width: 4032, height: 3024 }],
   })),
+  launchImageLibraryAsync: jest.fn(async () => ({ canceled: true, assets: null })),
 }));
 
 jest.mock('expo-image-manipulator', () => {

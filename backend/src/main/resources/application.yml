@@ -10,9 +10,11 @@ spring:
       auto-index-creation: true
   servlet:
     multipart:
-      # Photos : refus au-delà de 10 Mo (reveil.photos.max-size), marge pour les en-têtes multipart.
-      max-file-size: 10MB
-      max-request-size: 11MB
+      # Photos : la limite par fichier (15 Mo) est contrôlée par l'application (reveil.photos.max-size), fichier
+      # par fichier, pour qu'un envoi multiple ne soit pas rejeté en bloc ; ici, plafond de la requête entière
+      # (envoi multiple : 10 fichiers, les clients regroupent les fichiers sous ce plafond).
+      max-file-size: 60MB
+      max-request-size: 61MB
 reveil:
   jwt:
     # Fourni par l'environnement (REVEIL_JWT_SECRET, >= 32 octets). Vide => clé éphémère.
@@ -37,8 +39,10 @@ reveil:
       # Contenu JSON du compte de service (REVEIL_FCM_CREDENTIALS_JSON) ; vide => GOOGLE_APPLICATION_CREDENTIALS.
       credentials-json: ${REVEIL_FCM_CREDENTIALS_JSON:}
   photos:
-    # Taille maximale d'une photo envoyée (le mobile compresse en JPEG, largeur <= 2048 px).
-    max-size: 10MB
+    # Taille maximale d'une photo envoyée (le mobile compresse en JPEG, largeur <= 2048 px ; le web envoie l'original).
+    max-size: 15MB
+    # Nombre maximal de fichiers par envoi multiple (POST /api/events/{id}/photos/batch).
+    max-batch-files: 10
     # Plus grand côté de la miniature générée côté serveur.
     thumbnail-size: 400
 management:

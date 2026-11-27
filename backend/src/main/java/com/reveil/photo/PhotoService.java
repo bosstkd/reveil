@@ -4,7 +4,10 @@ import com.reveil.event.EventNotFoundException;
 import com.reveil.event.EventRepository;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -13,6 +16,10 @@ import org.springframework.web.multipart.MultipartFile;
 public class PhotoService {
 
     static final String EMPTY = "Aucune photo reçue";
+    static final String STORE_FAILED = "Enregistrement de la photo impossible, réessayez";
+
+    private static final Logger log = LoggerFactory.getLogger(PhotoService.class);
+    private static final int MAX_FILENAME = 255;
 
     private final EventRepository events;
     private final PhotoRepository photos;
@@ -35,6 +42,50 @@ public class PhotoService {
      */
     public PhotoResponse upload(String ownerId, String eventId, MultipartFile file) {
         requireEvent(ownerId, eventId);
+        return store(ownerId, eventId, file);
+    }
+
+    /**
+     * Envoi multiple (au plus {@code maxBatchFiles} fichiers) : chaque fichier est contrôlé et enregistré
+     * indépendamment ; un fichier refusé n'empêche pas l'enregistrement des autres.
+     */
+    public BatchUploadResponse uploadAll(String ownerId, String eventId, List<MultipartFile> files) {
+        requireEvent(ownerId, eventId);
+        List<MultipartFile> received = files == null ? List.of() : files;
+        if (received.isEmpty()) {
+            throw new InvalidPhotoException(HttpStatus.BAD_REQUEST, EMPTY);
+        }
+        if (received.size() > settings.maxBatchFiles()) {
+            throw new InvalidPhotoException(HttpStatus.BAD_REQUEST,
+                    "Trop de photos : " + settings.maxBatchFiles() + " au maximum par envoi");
+        }
+        List<PhotoResponse> saved = new ArrayList<>();
+        List<BatchUploadResponse.RejectedFile> rejected = new ArrayList<>();
+        for (int i = 0; i < received.size(); i++) {
+            MultipartFile file = received.get(i);
+            try {
+                saved.add(store(ownerId, eventId, file));
+            } catch (InvalidPhotoException e) {
+                rejected.add(new BatchUploadResponse.RejectedFile(i, filename(file), e.getStatus().value(), e.getMessage()));
+            } catch (RuntimeException e) {
+                log.error("Photo {} de l'événement {} non enregistrée", i, eventId, e);
+                rejected.add(new BatchUploadResponse.RejectedFile(i, filename(file),
+                        HttpStatus.INTERNAL_SERVER_ERROR.value(), STORE_FAILED));
+            }
+        }
+        return new BatchUploadResponse(saved, rejected);
+    }
+
+    private static String filename(MultipartFile file) {
+        String name = file == null ? null : file.getOriginalFilename();
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        return name.length() > MAX_FILENAME ? name.substring(0, MAX_FILENAME) : name;
+    }
+
+    /** Contrôle et enregistre un fichier (l'événement a déjà été vérifié). */
+    private PhotoResponse store(String ownerId, String eventId, MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new InvalidPhotoException(HttpStatus.BAD_REQUEST, EMPTY);
         }
